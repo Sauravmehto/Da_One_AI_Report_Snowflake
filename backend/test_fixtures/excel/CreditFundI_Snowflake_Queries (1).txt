@@ -1,0 +1,268 @@
+================================================================================
+  MERIDIAN CREDIT FUND I — SNOWFLAKE QUERIES
+  Database: PRIVATECREDIT.PUBLIC | Warehouse: COMPUTE_WH
+  Generated: 2026-07-01
+================================================================================
+
+
+────────────────────────────────────────────────────────────────────────────────
+ 0. TABLE INVENTORY
+────────────────────────────────────────────────────────────────────────────────
+
+SELECT TABLE_NAME, TABLE_TYPE, ROW_COUNT, COMMENT
+FROM PRIVATECREDIT.INFORMATION_SCHEMA.TABLES
+WHERE TABLE_SCHEMA = 'PUBLIC'
+ORDER BY TABLE_NAME;
+
+
+────────────────────────────────────────────────────────────────────────────────
+ 1. LOAN_DATA — Master Loan Register (PRIVATE_CREDIT)
+────────────────────────────────────────────────────────────────────────────────
+
+SELECT
+    SECURITY_ID,
+    SECURITY_NAME,
+    FUND_NAME,
+    BORROWER_NAME,
+    SECTOR,
+    GEOGRAPHY,
+    ORIGINATION_DATE,
+    MATURITY_DATE,
+    TENURE_MONTHS,
+    IO_PERIOD_MONTHS,
+    PRINCIPAL,
+    CURRENT_VALUE,
+    INTEREST_RATE_PCT,
+    PIK_RATE_PCT,
+    ORIGINATION_FEE_PCT,
+    EOT_FEE_PCT,
+    PAYMENT_TYPE,
+    REPAYMENT_FREQUENCY,
+    LTV_PCT,
+    DSCR,
+    COVENANT_STATUS,
+    COVENANT_NOTES,
+    COLLATERAL_TYPE,
+    COLLATERAL_DESCRIPTION,
+    COLLATERAL_VALUE,
+    BORROWER_REVENUE,
+    BORROWER_EBITDA,
+    BORROWER_NET_DEBT,
+    BORROWER_LEVERAGE_RATIO,
+    INTEREST_COVERAGE_RATIO,
+    LOAN_STATUS,
+    RESOLUTION_NOTES,
+    LAST_PAYMENT_DATE,
+    NEXT_PAYMENT_DATE,
+    TOTAL_INTEREST_RECEIVED,
+    TOTAL_PRINCIPAL_REPAID,
+    -- Derived columns
+    DATEDIFF('day', CURRENT_DATE(), MATURITY_DATE)                          AS DAYS_TO_MATURITY,
+    (INTEREST_RATE_PCT + PIK_RATE_PCT + ORIGINATION_FEE_PCT / TENURE_MONTHS * 12)
+                                                                            AS ALL_IN_YIELD,
+    PRINCIPAL * (INTEREST_RATE_PCT + PIK_RATE_PCT)                          AS ANNUAL_INCOME
+FROM PRIVATECREDIT.PUBLIC.PRIVATE_CREDIT
+ORDER BY SECURITY_ID;
+
+
+────────────────────────────────────────────────────────────────────────────────
+ 2. LOAN_DATA — FX Rates Sub-Table (PC_FX_RATES)
+────────────────────────────────────────────────────────────────────────────────
+
+SELECT
+    QUARTER_LABEL,
+    RATE_DATE,
+    CURRENCY_PAIR,
+    RATE_TO_USD,
+    RATE_SOURCE
+FROM PRIVATECREDIT.PUBLIC.PC_FX_RATES
+ORDER BY RATE_DATE DESC, CURRENCY_PAIR;
+
+
+────────────────────────────────────────────────────────────────────────────────
+ 3. TIMESERIES — Quarterly Fair Value Marks (PC_MARKS)
+────────────────────────────────────────────────────────────────────────────────
+
+-- Detail level: one row per loan per quarter
+SELECT
+    m.SECURITY_ID,
+    m.BORROWER_NAME,
+    m.MARK_DATE,
+    m.QUARTER_LABEL,
+    p.SECTOR,
+    m.OUTSTANDING_PRINCIPAL,
+    m.FAIR_VALUE,
+    m.UNREALIZED_GAIN_LOSS,
+    m.MARK_TO_PAR,
+    m.DSCR_AT_MARK,
+    m.LTV_AT_MARK,
+    m.COVENANT_STATUS,
+    m.CASH_INTEREST_ACCRUED,
+    m.PIK_INTEREST_ACCRUED,
+    m.TOTAL_INCOME_ACCRUED,
+    m.MARK_METHODOLOGY,
+    m.NOTES
+FROM PRIVATECREDIT.PUBLIC.PC_MARKS m
+LEFT JOIN PRIVATECREDIT.PUBLIC.PRIVATE_CREDIT p
+    ON m.SECURITY_ID = p.SECURITY_ID
+ORDER BY m.MARK_DATE, m.SECURITY_ID;
+
+
+-- Aggregated: quarterly portfolio roll-up
+SELECT
+    QUARTER_LABEL,
+    MAX(MARK_DATE)                                                              AS MARK_DATE,
+    COUNT(DISTINCT SECURITY_ID)                                                 AS LOANS_MARKED,
+    SUM(OUTSTANDING_PRINCIPAL)                                                  AS TOTAL_OUTSTANDING,
+    SUM(FAIR_VALUE)                                                             AS TOTAL_FAIR_VALUE,
+    SUM(UNREALIZED_GAIN_LOSS)                                                   AS AGGREGATE_UGL,
+    ROUND(SUM(FAIR_VALUE) / NULLIF(SUM(OUTSTANDING_PRINCIPAL), 0), 4)          AS WTD_AVG_MARK_TO_PAR,
+    ROUND(SUM(DSCR_AT_MARK * OUTSTANDING_PRINCIPAL)
+          / NULLIF(SUM(OUTSTANDING_PRINCIPAL), 0), 2)                          AS WTD_AVG_DSCR,
+    ROUND(SUM(LTV_AT_MARK  * OUTSTANDING_PRINCIPAL)
+          / NULLIF(SUM(OUTSTANDING_PRINCIPAL), 0), 4)                          AS WTD_AVG_LTV,
+    SUM(TOTAL_INCOME_ACCRUED)                                                   AS TOTAL_INCOME_ACCRUED,
+    COUNT(CASE WHEN COVENANT_STATUS IN ('Breach Risk','Monitoring') THEN 1 END) AS COVENANT_ISSUES
+FROM PRIVATECREDIT.PUBLIC.PC_MARKS
+GROUP BY QUARTER_LABEL
+ORDER BY MAX(MARK_DATE);
+
+────────────────────────────────────────────────────────────────────────────────
+ 7. RISK_DASHBOARD — Limit Breach Monitor (PC_RISK_LIMITS)
+────────────────────────────────────────────────────────────────────────────────
+
+SELECT
+    FUND_ID,
+    LIMIT_CATEGORY,
+    LIMIT_TYPE,
+    LIMIT_DESCRIPTION,
+    LIMIT_THRESHOLD_PCT,
+    LIMIT_BASIS,
+    CURRENT_LEVEL_PCT_Q1_2026,
+    STATUS,
+    BREACH_NOTES
+FROM PRIVATECREDIT.PUBLIC.PC_RISK_LIMITS
+ORDER BY
+    CASE STATUS WHEN 'Breach' THEN 1 WHEN 'Watch' THEN 2 ELSE 3 END,
+    LIMIT_CATEGORY;
+
+
+────────────────────────────────────────────────────────────────────────────────
+ 8. CASHFLOW — Payment Schedule and Status (PC_CASHFLOW)
+────────────────────────────────────────────────────────────────────────────────
+
+-- Full payment schedule
+SELECT
+    SECURITY_ID,
+    BORROWER_NAME,
+    PAYMENT_DATE,
+    PERIOD_TYPE,
+    SCHEDULED_INTEREST,
+    PIK_INTEREST,
+    SCHEDULED_PRINCIPAL,
+    TOTAL_PAYMENT,
+    ACTUAL_PAYMENT,
+    PAYMENT_STATUS,
+    PAYMENT_RECEIVED_DATE,
+    DAYS_LATE,
+    NOTES
+FROM PRIVATECREDIT.PUBLIC.PC_CASHFLOW
+ORDER BY SECURITY_ID, PAYMENT_DATE;
+
+
+-- Overdue and upcoming payments summary (next 90 days)
+SELECT
+    SECURITY_ID,
+    BORROWER_NAME,
+    COUNT(CASE WHEN PAYMENT_STATUS = 'Late' THEN 1 END)            AS LATE_PAYMENTS,
+    MAX(DAYS_LATE)                                                  AS MAX_DAYS_LATE,
+    SUM(CASE WHEN PAYMENT_STATUS = 'Scheduled'
+             AND PAYMENT_DATE <= DATEADD('day', 90, CURRENT_DATE())
+             THEN TOTAL_PAYMENT END)                               AS PAYMENTS_DUE_90D,
+    MIN(CASE WHEN PAYMENT_STATUS = 'Scheduled'
+             THEN PAYMENT_DATE END)                                AS NEXT_PAYMENT_DATE
+FROM PRIVATECREDIT.PUBLIC.PC_CASHFLOW
+GROUP BY SECURITY_ID, BORROWER_NAME
+ORDER BY NEXT_PAYMENT_DATE;
+
+
+────────────────────────────────────────────────────────────────────────────────
+ 9. PORTFOLIO SUMMARY — KPI Scorecard (Single Query)
+────────────────────────────────────────────────────────────────────────────────
+
+SELECT
+    COUNT(DISTINCT SECURITY_ID)                                             AS LOAN_COUNT,
+    SUM(PRINCIPAL)                                                          AS TOTAL_PRINCIPAL,
+    SUM(CURRENT_VALUE)                                                      AS TOTAL_FAIR_VALUE,
+    SUM(PRINCIPAL * (INTEREST_RATE_PCT + PIK_RATE_PCT))                     AS ANNUAL_CASH_INCOME,
+    ROUND(SUM(PRINCIPAL * INTEREST_RATE_PCT) / NULLIF(SUM(PRINCIPAL),0), 4) AS WTD_AVG_INTEREST_RATE,
+    ROUND(SUM(PRINCIPAL * LTV_PCT)           / NULLIF(SUM(PRINCIPAL),0), 4) AS WTD_AVG_LTV,
+    ROUND(SUM(PRINCIPAL * DSCR)              / NULLIF(SUM(PRINCIPAL),0), 2) AS WTD_AVG_DSCR,
+    COUNT(CASE WHEN COVENANT_STATUS IN ('Breach Risk','Monitoring') THEN 1 END)
+                                                                            AS COVENANT_ISSUES,
+    COUNT(CASE WHEN LOAN_STATUS IN ('Active','Extended') THEN 1 END)        AS ACTIVE_LOANS
+FROM PRIVATECREDIT.PUBLIC.PRIVATE_CREDIT;
+
+
+────────────────────────────────────────────────────────────────────────────────
+ 10. EXPOSURE ANALYSIS — Sector Concentration
+────────────────────────────────────────────────────────────────────────────────
+
+SELECT
+    SECTOR,
+    COUNT(*)                                                                AS LOAN_COUNT,
+    SUM(PRINCIPAL)                                                          AS TOTAL_PRINCIPAL,
+    SUM(CURRENT_VALUE)                                                      AS TOTAL_FAIR_VALUE,
+    ROUND(SUM(CURRENT_VALUE) / SUM(SUM(CURRENT_VALUE)) OVER (), 4)         AS PCT_OF_PORTFOLIO,
+    ROUND(AVG(LTV_PCT), 4)                                                  AS AVG_LTV,
+    ROUND(AVG(DSCR), 2)                                                     AS AVG_DSCR
+FROM PRIVATECREDIT.PUBLIC.PRIVATE_CREDIT
+GROUP BY SECTOR
+ORDER BY TOTAL_FAIR_VALUE DESC;
+
+
+────────────────────────────────────────────────────────────────────────────────
+ 11. EXPOSURE ANALYSIS — Geography Concentration
+────────────────────────────────────────────────────────────────────────────────
+
+SELECT
+    GEOGRAPHY,
+    COUNT(*)                                                                AS LOAN_COUNT,
+    SUM(PRINCIPAL)                                                          AS TOTAL_PRINCIPAL,
+    SUM(CURRENT_VALUE)                                                      AS TOTAL_FAIR_VALUE,
+    ROUND(SUM(CURRENT_VALUE) / SUM(SUM(CURRENT_VALUE)) OVER (), 4)         AS PCT_OF_PORTFOLIO,
+    ROUND(AVG(LTV_PCT), 4)                                                  AS AVG_LTV,
+    ROUND(AVG(DSCR), 2)                                                     AS AVG_DSCR
+FROM PRIVATECREDIT.PUBLIC.PRIVATE_CREDIT
+GROUP BY GEOGRAPHY
+ORDER BY TOTAL_FAIR_VALUE DESC;
+
+
+────────────────────────────────────────────────────────────────────────────────
+ 12. EXPOSURE ANALYSIS — Collateral Coverage
+────────────────────────────────────────────────────────────────────────────────
+
+SELECT
+    SECURITY_ID,
+    BORROWER_NAME,
+    COLLATERAL_TYPE,
+    COLLATERAL_VALUE,
+    PRINCIPAL,
+    ROUND(COLLATERAL_VALUE / NULLIF(PRINCIPAL, 0), 2)                       AS COVERAGE_RATIO,
+    LTV_PCT,
+    (COLLATERAL_VALUE - PRINCIPAL)                                          AS COLLATERAL_CUSHION,
+    CASE
+        WHEN COLLATERAL_VALUE / NULLIF(PRINCIPAL,0) >= 2.0 THEN 'Strong'
+        WHEN COLLATERAL_VALUE / NULLIF(PRINCIPAL,0) >= 1.5 THEN 'Adequate'
+        WHEN COLLATERAL_VALUE / NULLIF(PRINCIPAL,0) >= 1.0 THEN 'Thin'
+        ELSE 'Under-collateralised'
+    END                                                                     AS COLLATERAL_ASSESSMENT
+FROM PRIVATECREDIT.PUBLIC.PRIVATE_CREDIT
+ORDER BY COVERAGE_RATIO DESC;
+
+
+================================================================================
+  END OF FILE
+  Connection: PRIVATECREDIT.PUBLIC | Warehouse: COMPUTE_WH
+  DataAlpha AI Inc. — Nexus AI Platform
+================================================================================

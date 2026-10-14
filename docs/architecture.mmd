@@ -1,0 +1,23 @@
+flowchart LR
+  Browser["React 19 + Vite<br/>chat, explore, files, dashboards, reports"]
+  API["FastAPI /api/v1"]
+  Agent["Anthropic agent loop<br/>streaming tool calls"]
+  Semantic["Semantic layer<br/>TOML metadata"]
+  Gate["Read-only SQL gate"]
+  Snowflake["Snowflake<br/>warehouses, saved dashboards, audit"]
+  Duck["DuckDB<br/>uploaded spreadsheets"]
+  Docs["Document index<br/>PDF, Word, text"]
+  Files["Workbook storage<br/>local disk or S3"]
+  Session["Sessions and chat history<br/>memory, files, or Redis"]
+
+  Browser -->|"/api proxied in dev"| API
+  API --> Session
+  API --> Agent
+  API --> Files
+  Agent --> Semantic
+  Agent --> Gate
+  Gate --> Snowflake
+  Gate --> Duck
+  Agent --> Docs
+  Agent --> Snowflake
+  Files --> Duck

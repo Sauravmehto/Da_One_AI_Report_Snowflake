@@ -1,0 +1,33 @@
+flowchart TD
+  Start["Open AI Reporting"] --> Auth{"Sign-in method"}
+  Auth -->|"OAuth client configured"| OAuth["Snowflake OAuth"]
+  Auth -->|"DEV_LOGIN_ENABLED and DEBUG"| Dev["Key-pair dev login"]
+  Auth -->|"Neither configured"| Blocked["Login explains that auth is not set up"]
+  OAuth -->|"callback error"| LoginFail["Return to login with the error"]
+  OAuth --> Session["Session cookie"]
+  Dev --> Session
+
+  Session --> Choose{"Source"}
+  Choose -->|"Warehouse"| Pick["Pick a database the role can see"]
+  Choose -->|"Files"| Upload["Upload spreadsheets, PDFs, Word, or text"]
+
+  Upload --> Progress["Server progress: layout, mapping, saving, indexing"]
+  Progress -->|"unreadable file"| FileFail["That file is marked failed; the rest continue"]
+  Progress --> Bound["Chat bound to EXCEL: or FOLDER:"]
+  Pick --> Ask["Question in chat"]
+  Bound --> Ask
+
+  Ask --> Loop["Model streams an answer or calls a tool"]
+  Loop -->|"run_safe_sql"| Sql["Validate SQL, then query Snowflake or DuckDB"]
+  Loop -->|"search_documents"| Search["Search the folder's document index"]
+  Loop -->|"show_chart / plan_dashboard"| Visual["Chart or dashboard plan"]
+  Sql -->|"query error"| Remedy["Error goes back to the model with a remedy"]
+  Remedy --> Loop
+  Search --> Loop
+  Sql --> Loop
+  Visual --> Review{"Save the dashboard?"}
+  Review -->|"save_dashboard"| Stored["Write the plan to Snowflake"]
+  Review -->|"leave it"| Cached["Plan stays cached until it expires"]
+  Loop -->|"model stops"| Result["Answer, chart, or dashboard on screen"]
+  Stored --> Result
+  Result --> Export["Open a saved dashboard, export PDF, or run an Excel report"]

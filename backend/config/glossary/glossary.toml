@@ -1,0 +1,283 @@
+# =====================================================================
+# DataAlpha MCP — shared glossary
+# =====================================================================
+# Industry-standard terms shared across all asset classes (private
+# credit, private equity, real estate). explain_concept answers ONLY
+# from these entries and never fabricates a definition — if a term
+# isn't here, the tool says so rather than guessing.
+#
+# To add a term, copy a [[term]] block. Fields:
+#   name       (required) canonical display name, acronym in parentheses
+#   aliases    (required) every way a user might type it — case/space/
+#              hyphen insensitive at lookup time, so include acronym,
+#              full name, and common variants
+#   category   (required) Credit | Private Equity | Real Estate |
+#              Valuation | General
+#   definition (required) 1-3 sentences, plain and precise
+#   formula    (optional) the calculation, when the term is a metric
+#   see_also   (optional) related term names, for cross-reference
+# =====================================================================
+
+# ---------------------------------------------------------------- Credit
+
+[[term]]
+name = "Debt Service Coverage Ratio (DSCR)"
+aliases = ["DSCR", "debt service coverage", "debt-service coverage ratio", "coverage ratio"]
+category = "Credit"
+definition = "A borrower's cash available for debt service (typically EBITDA or net operating income) divided by its total debt service (principal + interest) over a period. Above 1.0x means income covers debt payments; 1.25x implies a 25% cushion."
+formula = "Cash available for debt service / Total debt service (principal + interest)"
+see_also = ["Net Leverage", "Covenant"]
+
+[[term]]
+name = "Loan-to-Value (LTV)"
+aliases = ["LTV", "loan to value", "loan-to-value ratio"]
+category = "Credit"
+definition = "A loan's outstanding balance as a percentage of the appraised or market value of the collateral securing it. Lower LTV means more equity cushion beneath the loan and lower risk."
+formula = "Outstanding loan balance / Value of collateral"
+
+[[term]]
+name = "Weighted Average Interest Rate (WAIR)"
+aliases = ["WAIR", "weighted average interest rate", "weighted average coupon", "WAC"]
+category = "Credit"
+definition = "The average interest rate across a portfolio of loans, weighted by each loan's principal balance so larger loans influence the average more. Also called weighted average coupon (WAC)."
+formula = "SUM(rate x principal) / SUM(principal)"
+
+[[term]]
+name = "Coupon"
+aliases = ["coupon", "coupon rate", "stated rate"]
+category = "Credit"
+definition = "The stated interest rate a debt instrument pays on its principal, expressed annually — either as a fixed rate or as a spread over a floating reference rate."
+see_also = ["Spread", "Weighted Average Interest Rate (WAIR)"]
+
+[[term]]
+name = "Spread"
+aliases = ["spread", "credit spread", "margin"]
+category = "Credit"
+definition = "The incremental yield of a debt instrument over a reference rate (e.g. SOFR + 550 bps), compensating the lender for credit risk above the risk-free rate."
+see_also = ["Coupon", "Basis Point (bps)"]
+
+[[term]]
+name = "Covenant"
+aliases = ["covenant", "covenants", "maintenance covenant", "incurrence covenant", "covenant-lite", "cov-lite"]
+category = "Credit"
+definition = "A condition in a loan agreement the borrower must satisfy. Maintenance covenants are tested periodically (e.g. keep leverage below a threshold); incurrence covenants are tested only when the borrower takes a specific action such as raising new debt. 'Covenant-lite' loans carry few or no maintenance covenants."
+see_also = ["Watch-list", "Default"]
+
+[[term]]
+name = "Watch-list"
+aliases = ["watch-list", "watchlist", "watch list"]
+category = "Credit"
+definition = "An internal designation for loans or borrowers showing elevated risk — deteriorating financials, covenant pressure, or missed payments — that warrant closer monitoring but have not yet defaulted."
+see_also = ["Covenant", "Delinquency", "Default"]
+
+[[term]]
+name = "Payment-in-Kind (PIK)"
+aliases = ["PIK", "payment in kind", "payment-in-kind interest"]
+category = "Credit"
+definition = "Interest paid not in cash but by adding to the loan's principal balance, so the balance compounds and cash payment is deferred. Common in growth or stressed situations."
+
+[[term]]
+name = "Unitranche"
+aliases = ["unitranche", "uni-tranche"]
+category = "Credit"
+definition = "A single blended debt facility that combines senior and subordinated debt into one instrument with one blended interest rate, common in mid-market private credit."
+
+[[term]]
+name = "Amortization"
+aliases = ["amortization", "amortisation", "amortizing", "scheduled amortization"]
+category = "Credit"
+definition = "The scheduled repayment of loan principal over time, as opposed to a single bullet or balloon repayment at maturity. (In accounting, also the gradual write-down of a premium or discount.)"
+
+[[term]]
+name = "Delinquency"
+aliases = ["delinquency", "delinquent", "days past due", "DPD", "past due"]
+category = "Credit"
+definition = "A loan on which a scheduled payment is overdue but which has not yet defaulted, typically bucketed by days past due (e.g. 30/60/90)."
+see_also = ["Default", "Watch-list"]
+
+[[term]]
+name = "Default"
+aliases = ["default", "in default", "event of default"]
+category = "Credit"
+definition = "A borrower's failure to meet the legal obligations of its debt — typically missed payments beyond a cure period, or a covenant breach that triggers acceleration of the loan."
+see_also = ["Delinquency", "Recovery Rate"]
+
+[[term]]
+name = "Recovery Rate"
+aliases = ["recovery rate", "recovery", "loss given default", "LGD"]
+category = "Credit"
+definition = "The percentage of a defaulted loan's exposure ultimately recovered — through collateral, restructuring, or workout — net of costs. It is the complement of loss given default (LGD)."
+formula = "Amount recovered / Exposure at default"
+
+[[term]]
+name = "Net Leverage"
+aliases = ["net leverage", "leverage", "net debt to ebitda", "net debt/ebitda", "leverage ratio"]
+category = "Credit"
+definition = "A borrower's total debt minus cash, divided by EBITDA — roughly how many years of earnings it would take to repay net debt. A core credit-risk gauge."
+formula = "(Total debt - Cash) / EBITDA"
+see_also = ["Debt Service Coverage Ratio (DSCR)"]
+
+# -------------------------------------------------------- Private Equity
+
+[[term]]
+name = "Total Value to Paid-In (TVPI)"
+aliases = ["TVPI", "total value to paid-in", "total value to paid in", "total value multiple"]
+category = "Private Equity"
+definition = "Total value (cumulative distributions plus remaining NAV) divided by capital paid in by LPs — a gross multiple of invested capital that includes unrealized value. TVPI equals DPI plus RVPI."
+formula = "(Distributions + Residual NAV) / Paid-in capital"
+see_also = ["Distributions to Paid-In (DPI)", "Residual Value to Paid-In (RVPI)", "Multiple on Invested Capital (MOIC)"]
+
+[[term]]
+name = "Distributions to Paid-In (DPI)"
+aliases = ["DPI", "distributions to paid-in", "distributions to paid in", "realized multiple", "cash-on-cash"]
+category = "Private Equity"
+definition = "Cumulative distributions returned to LPs divided by capital paid in — the realized multiple, i.e. actual cash returned. Above 1.0x means LPs have received back more than they contributed."
+formula = "Cumulative distributions / Paid-in capital"
+see_also = ["Total Value to Paid-In (TVPI)", "Residual Value to Paid-In (RVPI)"]
+
+[[term]]
+name = "Residual Value to Paid-In (RVPI)"
+aliases = ["RVPI", "residual value to paid-in", "residual value to paid in", "unrealized multiple"]
+category = "Private Equity"
+definition = "Remaining fund NAV divided by capital paid in — the unrealized portion of value still held in the fund."
+formula = "Residual NAV / Paid-in capital"
+see_also = ["Total Value to Paid-In (TVPI)", "Distributions to Paid-In (DPI)"]
+
+[[term]]
+name = "Multiple on Invested Capital (MOIC)"
+aliases = ["MOIC", "multiple on invested capital", "money multiple", "gross multiple"]
+category = "Private Equity"
+definition = "Total value of an investment divided by the amount invested — a gross, non-time-weighted multiple, often used at the deal level (whereas TVPI is used at the fund level). 2.0x means the money doubled."
+formula = "Total value / Invested capital"
+see_also = ["Total Value to Paid-In (TVPI)", "Internal Rate of Return (IRR)"]
+
+[[term]]
+name = "Internal Rate of Return (IRR)"
+aliases = ["IRR", "internal rate of return", "net IRR", "gross IRR"]
+category = "Private Equity"
+definition = "The annualized, time-weighted discount rate that sets the net present value of all fund cash flows (calls and distributions) to zero. Unlike a multiple, IRR accounts for the timing of cash flows."
+see_also = ["Multiple on Invested Capital (MOIC)", "J-curve"]
+
+[[term]]
+name = "Committed Capital"
+aliases = ["committed capital", "commitment", "commitments", "LP commitment"]
+category = "Private Equity"
+definition = "The total amount an LP has legally agreed to contribute to a fund over its life, drawn down via capital calls as the GP needs it."
+see_also = ["Called and Uncalled Capital", "Capital Call (Drawdown)"]
+
+[[term]]
+name = "Called and Uncalled Capital"
+aliases = ["called capital", "uncalled capital", "drawn capital", "dry powder", "undrawn commitment"]
+category = "Private Equity"
+definition = "Called (drawn) capital is the portion of LP commitments the GP has already requested and received; uncalled is the committed-but-undrawn remainder. Aggregate uncalled capital is known as 'dry powder'."
+see_also = ["Committed Capital", "Capital Call (Drawdown)"]
+
+[[term]]
+name = "Capital Call (Drawdown)"
+aliases = ["capital call", "drawdown", "draw down", "call", "capital drawdown"]
+category = "Private Equity"
+definition = "A GP's formal request for LPs to transfer a portion of their committed capital, typically to fund an investment or pay fund expenses."
+see_also = ["Committed Capital", "Distribution"]
+
+[[term]]
+name = "Distribution"
+aliases = ["distribution", "distributions", "capital distribution"]
+category = "Private Equity"
+definition = "Cash (or occasionally securities) returned by a fund to its LPs, sourced from realized investments, income, or recapitalizations."
+see_also = ["Distributions to Paid-In (DPI)", "Capital Call (Drawdown)"]
+
+[[term]]
+name = "Vintage Year"
+aliases = ["vintage", "vintage year"]
+category = "Private Equity"
+definition = "The year a fund made its first investment or held its first close. Funds are benchmarked against peers of the same vintage, since market conditions vary materially year to year."
+
+[[term]]
+name = "J-curve"
+aliases = ["j-curve", "j curve"]
+category = "Private Equity"
+definition = "The typical shape of a private fund's returns over time — early negative returns (fees and costs incurred before investments mature) followed by rising returns as investments are realized."
+see_also = ["Internal Rate of Return (IRR)"]
+
+[[term]]
+name = "Carried Interest (Carry)"
+aliases = ["carried interest", "carry", "performance fee", "promote"]
+category = "Private Equity"
+definition = "The GP's share of a fund's profits (commonly around 20%), earned above a hurdle rate. It is the manager's primary performance incentive."
+see_also = ["Management Fee", "General Partner and Limited Partner (GP / LP)"]
+
+[[term]]
+name = "Management Fee"
+aliases = ["management fee", "management fees"]
+category = "Private Equity"
+definition = "An annual fee (commonly ~1.5–2% of committed or invested capital) paid by LPs to the GP to operate the fund, charged independently of performance."
+see_also = ["Carried Interest (Carry)"]
+
+[[term]]
+name = "General Partner and Limited Partner (GP / LP)"
+aliases = ["GP", "LP", "general partner", "limited partner", "GP/LP", "general partner and limited partner"]
+category = "Private Equity"
+definition = "The General Partner is the fund manager that runs the fund and makes investment decisions; the Limited Partners are the investors who provide capital and hold limited liability."
+
+# ------------------------------------------------------------ Real Estate
+
+[[term]]
+name = "Capitalization Rate (Cap Rate)"
+aliases = ["cap rate", "capitalization rate", "capitalisation rate", "caprate"]
+category = "Real Estate"
+definition = "A property's net operating income divided by its market value or purchase price — the unlevered yield of a real estate asset. A lower cap rate implies a higher valuation relative to income."
+formula = "Net Operating Income / Property value"
+see_also = ["Net Operating Income (NOI)"]
+
+[[term]]
+name = "Net Operating Income (NOI)"
+aliases = ["NOI", "net operating income"]
+category = "Real Estate"
+definition = "A property's gross rental income minus operating expenses, excluding debt service, capital expenditures, income taxes, and depreciation. The core measure of a property's operating cash generation."
+formula = "Gross operating income - Operating expenses"
+see_also = ["Capitalization Rate (Cap Rate)"]
+
+[[term]]
+name = "Occupancy Rate"
+aliases = ["occupancy", "occupancy rate", "occupancy ratio"]
+category = "Real Estate"
+definition = "The percentage of a property's leasable space that is currently leased or occupied."
+formula = "Occupied space / Total leasable space"
+
+# ------------------------------------------------------------- Valuation
+
+[[term]]
+name = "Net Asset Value (NAV)"
+aliases = ["NAV", "net asset value"]
+category = "Valuation"
+definition = "The value of a fund's assets minus its liabilities — the fund's equity value at a point in time, and the basis for LP valuations."
+formula = "Total assets - Total liabilities"
+
+[[term]]
+name = "Mark-to-Market"
+aliases = ["mark-to-market", "mark to market", "MTM", "marked to market"]
+category = "Valuation"
+definition = "Valuing a position at its current market price rather than book or cost, so reported value reflects current conditions."
+see_also = ["Portfolio Mark-to-Par"]
+
+[[term]]
+name = "Portfolio Mark-to-Par"
+aliases = ["mark-to-par", "mark to par", "portfolio mark-to-par", "par value", "par"]
+category = "Valuation"
+definition = "Par is the face (nominal) value of a debt instrument — 100 cents on the dollar. Mark-to-par expresses current value as a percentage of par; a portfolio marked below par (e.g. 97) is valued below face, signaling credit concern or rate moves."
+see_also = ["Mark-to-Market", "Net Asset Value (NAV)"]
+
+[[term]]
+name = "Accrued Interest"
+aliases = ["accrued interest", "accrual", "accrued"]
+category = "Valuation"
+definition = "Interest that has been earned but not yet paid or received as of a given date."
+
+# --------------------------------------------------------------- General
+
+[[term]]
+name = "Basis Point (bps)"
+aliases = ["bps", "basis point", "basis points", "bp"]
+category = "General"
+definition = "One hundredth of one percent (0.01%). 100 basis points equal 1%. Used to express interest rates, spreads, and fees precisely."
+see_also = ["Spread"]

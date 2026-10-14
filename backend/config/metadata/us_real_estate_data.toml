@@ -1,0 +1,84 @@
+database = "US_REAL_ESTATE_DATA"
+display_name = "US Mortgage & Property Data"
+description = "National US property records: last-sale and assessment data per parcel, recorded involuntary liens, and NMLS mortgage records. Roughly 3 years of recent activity."
+join_rules = """
+- PROPS is the property master. One row per parcel, carrying its MOST RECENT sale and current assessment. It is NOT a sales history table — there is one row per property, not one per transaction.
+- INVOLLIENS is recorded involuntary liens. One row per lien document.
+- CRITICAL: INVOLLIENS has NO property identifier. It carries FIPS, STATE, COUNTY and party names only. It therefore CANNOT be joined to PROPS at property level. Any comparison between liens and properties must aggregate both sides to STATE (or FIPS/COUNTY) and join on that. Never imply a lien belongs to a specific property.
+- NATLNMLSLITE holds mortgage/loan records. Treat as a separate population unless the user asks specifically about mortgages.
+- NATL_RAWPROPERTIES is EMPTY (0 rows). Never query it.
+- These are very large tables (PROPS ~14.6m rows, INVOLLIENS ~2.2m). ALWAYS filter — by STATE, by date, or both — before aggregating. An unfiltered scan is slow and usually not what the user meant.
+- Always use LEFT JOIN when the right side may not match.
+"""
+dashboard_heuristics = """
+- Default to a recent window unless the user names one: LSTSLDATE >= '2025-01-01' for sales, RECORDINGDATE >= '2025-01-01' for liens. Say so in the panel title.
+- ALWAYS filter out junk sale prices with LSTSLPR > 1000. The feed contains nominal $1 transfers, deed corrections and intra-family transfers that destroy any average.
+- For state-level panels, prefer the top 10-12 states by volume rather than all 50 — the long tail is unreadable in a chart.
+- Sale VALUE totals are large; divide by 1e9 and label \"$bn\" so axis labels stay legible.
+- For a market overview, good panels are: sales volume by state, average sale price by state, sale price vs market value, and monthly sales trend.
+- For a lien or distress view, use INVOLLIENS grouped by DOCCATEGORY or STATE. Compare to sales only at STATE level.
+- Monthly trends: DATE_TRUNC('month', LSTSLDATE). Order by the raw date, then format for display.
+"""
+
+[tables."US_REAL_ESTATE_DATA.NATL.PROPS"]
+description = "Property master — one row per parcel, with its most recent sale and current assessment. ~14.6m rows."
+notes = "YEARBUILT is TEXT, not a number — wrap in TRY_TO_NUMBER before arithmetic or comparison. PROPUSE is a TEXT code, not a label (1001 = single family, 1101 = duplex/multi, 2000 = commercial, 8001 = vacant/other); prefer grouping by STATE or COUNTY unless the user asks about property use. LSTSLPR contains nominal transfers — always filter LSTSLPR > 1000. One row per PROPERTY, so COUNT(*) is a property count, not a transaction count."
+
+[tables."US_REAL_ESTATE_DATA.NATL.PROPS".key_columns]
+PROPID = "Unique property/parcel identifier (TEXT)"
+STATE = "Two-letter state code (TEXT). Primary filter — always use it."
+COUNTY = "County name (TEXT)"
+CITY = "City name (TEXT)"
+FIPS = "County FIPS code (TEXT). The only geography INVOLLIENS shares below state level."
+LSTSLDATE = "Date of the most recent sale (DATE)"
+LSTSLPR = "Most recent sale price in dollars (NUMBER). Filter > 1000 to exclude nominal transfers."
+MARKETTOTALVALUE = "Estimated market total value, distinct from tax-assessed value. Sparsely or inconsistently populated by jurisdiction and not an independent appraisal."
+ASSDVALTOT = "Total assessed value for tax purposes (NUMBER). Typically well below market value."
+TAXAMT = "Annual property tax amount (NUMBER)"
+LIVINGAREA = "Living area in square feet (NUMBER)"
+YEARBUILT = "Year built, stored as TEXT. Use TRY_TO_NUMBER(YEARBUILT) for any arithmetic."
+BEDROOMS = "Bedroom count (NUMBER)"
+PROPUSE = "Property use code as TEXT (1001 single family, 1101 duplex/multi, 2000 commercial, 8001 vacant/other)"
+LSTMTG = "Most recent mortgage amount (NUMBER)"
+LSTLENDER = "Lender on the most recent mortgage (TEXT)"
+OWNER1LN = "Primary owner surname or entity name (TEXT)"
+ZIPCODE = "Five-digit ZIP code; preserve leading zeros."
+LAT = "Property-centroid latitude in decimal degrees. Zero can indicate missing coordinates."
+LON = "Property-centroid longitude in decimal degrees. Zero can indicate missing coordinates."
+LSTMTGDATE = "Most recent recorded mortgage amount in dollars. Zero can mean no recorded mortgage, a cash purchase or unrecorded financing; it is not proof of cash and not current balance."
+ASSDVALLND = "Assessed value attributed to land."
+ASSDVALBLD = "Assessed value attributed to building/improvements. Land plus building generally reconciles to total assessed value."
+TAXYEAR = "Tax year to which the tax bill applies; source may store it as text."
+PROPCLASS = "Single-letter property class. Verified mappings: R=Residential, V=Vacant Land, C=Commercial, A=Apartment, E=Exempt, I=Industrial, O=Other, F=Farm, T=Timeshare and blank=Unclassified."
+LOTSIZESF = "Lot size in square feet."
+LOTSIZEAC = "Lot size in acres. A zero can occur for sub-acre parcels or missing conversion; use LOTSIZESF as the primary size field when appropriate."
+NUMBLDGS = "Number of buildings or structures on the parcel."
+NUMUNITS = "Number of dwelling units. Most relevant for multifamily; may be blank for single-family properties."
+TOTROOMS = "Total room count. Population is inconsistent across counties and zero can mean unavailable."
+BATHROOMS = "Bathroom count."
+
+[tables."US_REAL_ESTATE_DATA.NATL.PROPS".date_roles]
+LSTSLDATE = "sale_date"
+LSTMTGDATE = "mortgage_date"
+
+[tables."US_REAL_ESTATE_DATA.NATL.INVOLLIENS"]
+description = "Recorded involuntary liens — tax liens, judgments and federal liens. One row per lien document. ~2.2m rows."
+notes = "Has NO property key. Cannot be joined to PROPS at property level — aggregate both sides to STATE or FIPS first. DOCCATEGORY values: SLN (state/local tax lien), LEN (judgment or general lien), FLN (federal tax lien). AMOUNTDUE is 0 for release documents (DOCTYPE ending REL), so filter AMOUNTDUE > 0 when summing exposure."
+
+[tables."US_REAL_ESTATE_DATA.NATL.INVOLLIENS".key_columns]
+STATE = "Two-letter state code (TEXT). The join key to PROPS, at state level only."
+COUNTY = "County name (TEXT)"
+FIPS = "County FIPS code (TEXT)"
+RECORDINGDATE = "Date the lien was recorded (DATE)"
+DOCCATEGORY = "SLN = state/local tax lien, LEN = judgment/general lien, FLN = federal tax lien"
+DOCTYPE = "Specific document type. Values ending REL are releases, not new liens."
+AMOUNTDUE = "Amount claimed in dollars (NUMBER). 0 on release documents — filter > 0 when summing."
+NAME1FULLNAME = "First party — usually the debtor (TEXT)"
+NAME2FULLNAME = "Second party — usually the creditor or taxing authority (TEXT)"
+
+[tables."US_REAL_ESTATE_DATA.NATL.INVOLLIENS".date_roles]
+RECORDINGDATE = "recording_date"
+
+[tables."US_REAL_ESTATE_DATA.NATL.NATLNMLSLITE"]
+description = "NMLS mortgage and loan records. ~12m rows. A separate population from PROPS — only use when the user asks specifically about mortgages or lenders."
+notes = "Large table. Always filter before aggregating."

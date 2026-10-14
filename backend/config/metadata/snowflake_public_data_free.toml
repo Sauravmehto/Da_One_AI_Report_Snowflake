@@ -1,0 +1,5 @@
+database = "SNOWFLAKE_PUBLIC_DATA_FREE"
+display_name = "Snowflake Free"
+
+[tables."SNOWFLAKE_PUBLIC_DATA_FREE.PUBLIC_DATA_FREE.HOME_MORTGAGE_DISCLOSURE_ATTRIBUTES"]
+description = "Housing market data"

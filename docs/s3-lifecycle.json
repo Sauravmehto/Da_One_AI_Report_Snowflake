@@ -1,0 +1,32 @@
+{
+  "Rules": [
+    {
+      "ID": "expire-abandoned-uploads",
+      "Filter": { "Prefix": "uploads/" },
+      "Status": "Enabled",
+      "Expiration": { "Days": 7 },
+      "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 1 }
+    },
+    {
+      "ID": "tidy-old-upload-versions",
+      "Filter": { "Prefix": "uploads/" },
+      "Status": "Enabled",
+      "NoncurrentVersionExpiration": { "NoncurrentDays": 7 }
+    },
+    {
+      "ID": "expire-proposed-plans",
+      "Filter": { "Prefix": "plans/" },
+      "Status": "Enabled",
+      "Expiration": { "Days": 2 }
+    },
+    {
+      "ID": "cool-old-generated-reports",
+      "Filter": { "Prefix": "reports/" },
+      "Status": "Enabled",
+      "Transitions": [
+        { "Days": 90, "StorageClass": "STANDARD_IA" },
+        { "Days": 365, "StorageClass": "GLACIER_IR" }
+      ]
+    }
+  ]
+}

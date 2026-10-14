@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.env
+
+# Node
+node_modules/
+dist/
+
+# dotenv
+*.env
+!*.env.example
+
+# Credentials — never commit (carried over from the MCP project's gitignore,
+# ahead of porting its code in)
+*.p8
+*.pem
+rsa_key*
+*.key
+
+# Local data / generated artefacts
+audit_log.sqlite3
+excel_storage/
+excel_inbox/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+
+# Local conversation store (file-backed) — never commit chat history
+.conversations/
+.sessions/
+
+.pnpm-store/

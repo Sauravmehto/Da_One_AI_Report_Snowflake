@@ -1,0 +1,15 @@
+database = "_default"
+display_name = "Connected Database"
+description = "No database-specific configuration found. The app will use schema context only."
+
+join_rules = """
+- Always use LEFT JOIN when the right side may not have matching rows.
+- Never use implicit joins or cartesian products.
+- When in doubt about relationships between tables, query them independently.
+"""
+
+dashboard_heuristics = """
+- Analyze the schema context to determine appropriate panels.
+- TEXT columns that contain numeric-looking data should be parsed with TRY_CAST after stripping common formatting characters ('$', '%', ',').
+- For accounting notation with parentheses for negatives, convert (x) to -x before casting.
+"""

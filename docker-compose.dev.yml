@@ -1,0 +1,90 @@
+# Portainer / server: pull-only hosted DEV stack (no build).
+# Requires stack env: DOMAIN=dataalpha.in
+# Requires external Docker network: web (same network Traefik is on)
+#
+# Does not replace docker-compose.prod.yml — run as a separate Portainer stack.
+#
+# Build prod targets locally, retag as :dev, then push (leaves :latest alone):
+#   docker compose -f docker-compose.yml build backend frontend
+#   docker tag 629143592903.dkr.ecr.us-east-1.amazonaws.com/ai-reporting-be:latest \
+#     629143592903.dkr.ecr.us-east-1.amazonaws.com/ai-reporting-be:dev
+#   docker tag 629143592903.dkr.ecr.us-east-1.amazonaws.com/ai-reporting-fe:latest \
+#     629143592903.dkr.ecr.us-east-1.amazonaws.com/ai-reporting-fe:dev
+#   docker push 629143592903.dkr.ecr.us-east-1.amazonaws.com/ai-reporting-be:dev
+#   docker push 629143592903.dkr.ecr.us-east-1.amazonaws.com/ai-reporting-fe:dev
+#
+# Public URL: https://one-dev.${DOMAIN}
+#   /       → frontend (nginx :80)
+#   /api/*  → backend (:8000)
+
+networks:
+  web:
+    external: true
+
+services:
+  backend:
+    image: 629143592903.dkr.ecr.us-east-1.amazonaws.com/ai-reporting-be:dev
+    pull_policy: always
+    restart: unless-stopped
+    # Values come from Portainer stack Environment (no .env file in the repo).
+    environment:
+      DEBUG: ${DEBUG:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      FRONTEND_URL: ${FRONTEND_URL}
+      WEBAPP_BASE_URL: ${WEBAPP_BASE_URL}
+      SESSION_BACKEND: ${SESSION_BACKEND:-redis}
+      REDIS_URL: ${REDIS_URL}
+      SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT}
+      SNOWFLAKE_WAREHOUSE: ${SNOWFLAKE_WAREHOUSE}
+      SNOWFLAKE_DATABASE: ${SNOWFLAKE_DATABASE}
+      SNOWFLAKE_DEFAULT_ROLE: ${SNOWFLAKE_DEFAULT_ROLE}
+      SNOWFLAKE_AVAILABLE_ROLES: ${SNOWFLAKE_AVAILABLE_ROLES}
+      # Snowflake roles allowed into the semantic-layer admin portal.
+      # MUST be declared here, not only in the Portainer stack environment:
+      # stack variables fill in ${...} when the compose file is rendered, but a
+      # container only receives what this block names. Unset means NOBODY is an
+      # admin (a deliberate default), which presents as the Configuration
+      # section vanishing and /admin/semantic returning 403 for every user.
+      ADMIN_ROLES: ${ADMIN_ROLES}
+      OAUTH_CLIENT_ID: ${OAUTH_CLIENT_ID}
+      OAUTH_CLIENT_SECRET: ${OAUTH_CLIENT_SECRET}
+      OAUTH_REDIRECT_URI: ${OAUTH_REDIRECT_URI}
+      JWT_SECRET: ${JWT_SECRET}
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      DEV_LOGIN_ENABLED: ${DEV_LOGIN_ENABLED:-false}
+      # Dashboard panel queries run at once, per dashboard (1-8). 1 = one after
+      # another, the previous behaviour. Named here or the container never
+      # receives it.
+      DASHBOARD_QUERY_CONCURRENCY: ${DASHBOARD_QUERY_CONCURRENCY:-1}
+    networks:
+      - web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=web"
+      - "traefik.http.routers.one-dev-api.rule=Host(`one-dev.${DOMAIN}`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.one-dev-api.entrypoints=websecure"
+      - "traefik.http.routers.one-dev-api.tls.certresolver=le"
+      - "traefik.http.routers.one-dev-api.middlewares=secure-headers@docker,ratelimit@docker"
+      - "traefik.http.routers.one-dev-api.service=one-dev-api"
+      - "traefik.http.services.one-dev-api.loadbalancer.server.port=8000"
+
+  frontend:
+    image: 629143592903.dkr.ecr.us-east-1.amazonaws.com/ai-reporting-fe:dev
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=web"
+      - "traefik.http.routers.one-dev.rule=Host(`one-dev.${DOMAIN}`) && !PathPrefix(`/api`)"
+      - "traefik.http.routers.one-dev.entrypoints=websecure"
+      - "traefik.http.routers.one-dev.tls.certresolver=le"
+      - "traefik.http.routers.one-dev.middlewares=secure-headers@docker,ratelimit@docker"
+      - "traefik.http.routers.one-dev.service=one-dev"
+      - "traefik.http.services.one-dev.loadbalancer.server.port=80"

@@ -1,0 +1,193 @@
+database = "LOAN"
+display_name = "Loan Portfolio & MBS Reconciliation"
+description = "Mortgage servicing, securities positions, and reconciliation data"
+
+join_rules = """
+- The LOAN database has independent tables that generally do NOT join to each other.
+- SERVICER1 and SERVICER2 are separate loan-servicing feeds with different schemas. Do NOT join them. Analyze each independently or UNION comparable columns with explicit aliasing.
+- INTERNAL_MBS and EXTERNAL_MBS represent two sides of a reconciliation. RECON_OP already contains the comparison — prefer querying RECON_OP directly for reconciliation analysis.
+- POSITIONS_INTERNAL_NEW and POSITION_EXTERNAL1_NEW are separate position feeds. Do NOT join them unless explicitly asked.
+- CUSTOMERS joins ORDERS on CUSTOMERS.CUSTOMER_ID = ORDERS.CUSTOMER_ID (these are small demo tables).
+- SF_CUSTOMER is a standalone TPC-H sample table with no foreign keys to other tables.
+- SINGULARITY_2 is a standalone portfolio holdings snapshot.
+- NOT business data — never query these to answer a business question, and never
+  include them in a dashboard. They are application infrastructure or scratch
+  copies: MCP_SAVED_DASHBOARDS, MCP_EXCEL_REPORTS, MCP_EXCEL_TEMPLATES,
+  EXCEL_TEMPLATES, SAVED_REPORTS, GRID_CONFIG, GRID_CONFIG_BKP, VI_GRIDCONFIG,
+  NAVMENU, REFERENCE_DATA_STORE, STG_BANK, SINGULARITY, SERVICER1NEW,
+  SINGULARITY_2_NEW.
+- When in doubt, query tables independently rather than inventing joins.
+- Always use LEFT JOIN when the right side may not have matching rows.
+- Never use implicit joins or cartesian products.
+"""
+
+dashboard_heuristics = """
+- If the user asks about delinquency, default, or risk, include panels for delinquent loan count and dollar exposure using SERVICER1 LOAN_STATUS LIKE 'DELQ%'.
+- If the user asks about loan portfolio, include breakdowns by property type, state, rate band, and loan status.
+- If the user asks about reconciliation or MBS breaks, query RECON_OP and count matched vs broken per _REC field.
+- If the user asks about securities positions, query INTERNAL_MBS grouped by POSITIONDIRECTION.
+- If the user asks about unrealized P&L, query SINGULARITY_2 and parse the TEXT columns correctly.
+- If combining SERVICER1 and SERVICER2 totals, query each separately and add results — do NOT join them.
+- For 'active loans' in SERVICER1, exclude LOAN_STATUS IN ('PAID_CLOSED', 'PAID_OPEN').
+- SERVICER2 has no status column. All rows are presumed active.
+- TEXT-encoded numeric columns (rates, dollar values, unrealized P&L) MUST be parsed with TRY_CAST after stripping '$', '%', ',', and converting '(x)' to '-x'.
+"""
+
+# ── Semantic Layer ──────────────────────────────────────────────────────
+
+[tables."LOAN.PUBLIC.SERVICER1"]
+description = "Loan-level servicing data from Servicer 1. Each row is one mortgage loan."
+notes = "To count active loans, exclude LOAN_STATUS IN ('PAID_CLOSED', 'PAID_OPEN'). SERVICER2 has a completely different schema and NO status column — never join these two tables."
+
+[tables."LOAN.PUBLIC.SERVICER1".key_columns]
+LOAN_ID = "Unique loan identifier (TEXT)"
+LOAN_STATUS = "Current status. Known values: IN_REPAY, PAID_CLOSED, PAID_OPEN, DELQ_1_9, DELQ_10_29, TRANSFERRED. Filter delinquent loans with: LOAN_STATUS LIKE 'DELQ%'"
+PRIN_BAL = "Current principal balance (NUMBER). Zero for paid-off loans."
+CURRENT_INTEREST_RATE = "TEXT column with values like '4.5%'. Parse with: TRY_CAST(REPLACE(CURRENT_INTEREST_RATE, '%', '') AS FLOAT)"
+ORIGINAL_INTEREST_RATE = "TEXT column. Same parsing as CURRENT_INTEREST_RATE."
+PROPERTY_ORIG_VALUE = "TEXT column with dollar values. Parse with: TRY_CAST(REPLACE(REPLACE(PROPERTY_ORIG_VALUE, '$', ''), ',', '') AS FLOAT)"
+PROPERTY_ADJ_VALUE = "TEXT column. Same parsing as PROPERTY_ORIG_VALUE."
+PROPERTY_STATE = "Two-letter US state code (TEXT)"
+PROPERTY_TYPE = "Known values: SFR, CONDO, TOWNHOUSE/ROWHOUSE, PUD"
+LOAN_PROGRAM = "Loan program type (TEXT)"
+OCCUPANCY_TYPE = "Occupancy type (TEXT)"
+RATE_TYPE = "Fixed or adjustable (TEXT)"
+# Date dimensions for parameter binding. _FILE_RECEIVED_DATE is the as-of date of
+# the servicing snapshot; the others are loan-lifecycle event dates.
+[tables."LOAN.PUBLIC.SERVICER1".date_roles]
+_FILE_RECEIVED_DATE = "snapshot_date"
+ORIG_DATE = "origination_date"
+START_DATE = "start_date"
+MATURITY_DATE = "maturity_date"
+NEXT_DUE_DATE = "next_payment_date"
+
+[tables."LOAN.PUBLIC.SERVICER2"]
+description = "Loan-level servicing data from Servicer 2. Different schema from SERVICER1. NO loan status column exists."
+notes = "Has NO loan status or delinquency column. Do NOT filter by status. The only delinquency signal is BALANCE_LATE_FEE_UNCOLLECTED > 0, but note this is an imperfect proxy."
+
+[tables."LOAN.PUBLIC.SERVICER2".key_columns]
+BALANCE_PRINCIPAL_CURRENT = "Current principal balance (NUMBER)"
+INTEREST_RATE_CURRENT = "Current interest rate as NUMBER, stored as a 0-1 FRACTION (e.g. 0.045 = 4.5%). Multiply by 100 to emit it as a percentage. (Note: SERVICER1's CURRENT_INTEREST_RATE is TEXT like '4.5%' that parses to a whole-number percent instead — the two feeds are on different scales.)"
+PROPERTY_STATE = "Two-letter US state code (TEXT)"
+BALANCE_LATE_FEE_UNCOLLECTED = "Uncollected late fees (NUMBER). This is the ONLY proxy for delinquency in SERVICER2."
+ORIGINAL_LOAN_AMOUNT = "Original loan amount — TEXT with commas e.g. '531,000'. Parse with: TRY_CAST(REPLACE(ORIGINAL_LOAN_AMOUNT, ',', '') AS FLOAT)"
+TOTALPAYOFF = "Current payoff amount (NUMBER)"
+# DATAASOFDATE is the explicit as-of/snapshot date of this servicing feed; the
+# rest are loan-lifecycle event dates. (_FILE_NAME_DATE is the ingestion date.)
+[tables."LOAN.PUBLIC.SERVICER2".date_roles]
+DATAASOFDATE = "snapshot_date"
+CLOSING_DATE = "closing_date"
+PAYMENT_DUE_DATE_FIRST = "first_payment_date"
+PAYMENT_DUE_DATE_NEXT = "next_payment_date"
+MODDATE = "modification_date"
+_FILE_NAME_DATE = "file_date"
+
+[tables."LOAN.PUBLIC.RECON_OP"]
+description = "MBS reconciliation output. Compares internal vs external positions. Every metric has three columns: _INT (internal), _EXT (external), _REC (reconciliation result/delta)."
+notes = "To count 'matched' positions for TEXT _REC fields, check if REPLACE(REPLACE(REPLACE(val, '$', ''), '-', ''), ' ', '') IN ('', '0', '0.00'). For NUMBER _REC fields, check = 0. For BOOLEAN _REC fields, check = TRUE."
+
+[tables."LOAN.PUBLIC.RECON_OP".key_columns]
+CUSIP_REC = "Security identifier match. BOOLEAN (TRUE = match)."
+POSDIR_REC = "Position direction match. BOOLEAN."
+QTY_REC = "TEXT. Match when value is '$-', '-', '0', '$0.00', or '$0.0'."
+CURFACE_REC = "TEXT. Same match logic as QTY_REC."
+TOTALCOST_REC = "TEXT. Same match logic."
+MKTVALUE_REC = "TEXT. Same match logic."
+ACCINT_REC = "TEXT. Same match logic."
+UNREAL_GL_REC = "TEXT. Same match logic."
+ORIGTRADE_DATE_REC = "NUMBER. Match when = 0."
+UNITCOST_REC = "NUMBER. Match when = 0."
+MKTPRICE331_REC = "NUMBER. Match when = 0."
+# The internal vs external original trade dates being reconciled.
+[tables."LOAN.PUBLIC.RECON_OP".date_roles]
+ORIGTRADE_DATE_INT = "trade_date_internal"
+ORIGTRADE_DATE_EXT = "trade_date_external"
+
+[tables."LOAN.PUBLIC.INTERNAL_MBS"]
+description = "Internal book of mortgage-backed securities holdings."
+notes = "Use this table (not POSITIONS_INTERNAL_NEW) when grouping by position direction."
+
+[tables."LOAN.PUBLIC.INTERNAL_MBS".key_columns]
+CUSIP = "Security identifier (TEXT)"
+POSITIONDIRECTION = "L (Long) or S (Short)"
+LOCALMARKETVALUE = "Market value in local currency (NUMBER)"
+LOCALTOTALCOST = "Total cost basis (NUMBER)"
+LOCALUNREALIZEDSECURITYINVENTORYVALUE = "Unrealized gain/loss (NUMBER)"
+[tables."LOAN.PUBLIC.INTERNAL_MBS".date_roles]
+ORIGINALTRADEDATE = "trade_date"
+
+[tables."LOAN.PUBLIC.EXTERNAL_MBS"]
+description = "External/counterparty view of MBS holdings."
+notes = "Mirror of INTERNAL_MBS from the counterparty side. Usually query RECON_OP instead for comparison analysis."
+[tables."LOAN.PUBLIC.EXTERNAL_MBS".date_roles]
+ORIGINALTRADEDATE = "trade_date"
+
+[tables."LOAN.PUBLIC.SINGULARITY_2"]
+description = "Portfolio holdings snapshot from the Singularity system."
+notes = "Most numeric columns are stored as TEXT with commas and accounting-style parentheses for negatives. ALWAYS strip commas and convert (x) to -x before casting."
+
+[tables."LOAN.PUBLIC.SINGULARITY_2".key_columns]
+SECURITY_DESCRIPTION = "Human-readable security name (TEXT)"
+UNREALIZED_LOSS_MARKET = "TEXT column using accounting notation: parentheses for negatives e.g. '(527,524.16)'. Parse with: TRY_CAST(REPLACE(REPLACE(REPLACE(UNREALIZED_LOSS_MARKET, ',', ''), '(', '-'), ')', '') AS FLOAT)"
+MARKET_VALUE = "TEXT column with commas and possible parentheses. Same parsing approach."
+ORIGINAL_COST = "TEXT. Same parsing approach."
+AMORTIZED_COST = "TEXT. Same parsing approach."
+[tables."LOAN.PUBLIC.SINGULARITY_2".date_roles]
+ORIGINAL_TRADE_DATE = "trade_date"
+
+[tables."LOAN.PUBLIC.POSITIONS_INTERNAL_NEW"]
+description = "Detailed internal securities position ledger. No position direction column."
+notes = "This table has NO position direction column. Use INTERNAL_MBS instead when direction is needed."
+
+[tables."LOAN.PUBLIC.POSITIONS_INTERNAL_NEW".key_columns]
+FUND_DESCRIPTION = "Fund name (TEXT)"
+LOCAL_MARKET_VALUE = "Market value (NUMBER)"
+LOCAL_TOTAL_COST = "Total cost (NUMBER)"
+QUANTITY = "Position quantity (NUMBER)"
+CURRENT_FACE = "Current face value (NUMBER)"
+# DATE is the position as-of date; the others are the trade lifecycle dates.
+[tables."LOAN.PUBLIC.POSITIONS_INTERNAL_NEW".date_roles]
+DATE = "snapshot_date"
+TRADE_DATE = "trade_date"
+SETTLEMENT_DATE = "settlement_date"
+TERMINATION_DATE = "termination_date"
+
+[tables."LOAN.PUBLIC.SF_CUSTOMER"]
+description = "TPC-H benchmark sample customer table. NOT real business data."
+notes = "Synthetic benchmark data, uniformly distributed, not connected to any other LOAN table. Documented only so it is recognisably NOT the loan portfolio — never use it to answer a business question about customers or loans."
+
+[tables."LOAN.PUBLIC.SF_CUSTOMER".key_columns]
+C_CUSTKEY = "Customer key (NUMBER)"
+C_ACCTBAL = "Account balance (NUMBER, range roughly -1000 to 10000)"
+C_MKTSEGMENT = "Market segment. Values: AUTOMOBILE, BUILDING, FURNITURE, HOUSEHOLD, MACHINERY"
+C_NATIONKEY = "Nation key (NUMBER, 0-24)"
+# INTENTIONALLY DATELESS: TPC-H synthetic customer data has no date/timestamp
+# column, so it cannot support a date parameter. Marked explicitly (not merely
+# un-annotated) so it is distinguishable from a table awaiting annotation.
+# (No date_roles.)
+
+# ── Business Metrics ────────────────────────────────────────────────────
+# Named, authoritative definitions for common business calculations.
+# When a user asks about one of these, Claude uses the exact SQL below
+# instead of inventing its own formula. Each metric has a plain-English
+# `definition` (for explanation) and the `sql` expression (for querying).
+
+[metrics."Delinquency Rate"]
+definition = "Share of loans that are delinquent, as a percentage of all loans in SERVICER1."
+sql = "SELECT 100.0 * COUNT_IF(LOAN_STATUS LIKE 'DELQ%') / NULLIF(COUNT(*), 0) AS delinquency_rate_pct FROM LOAN.PUBLIC.SERVICER1"
+
+[metrics."Active Loan Count"]
+definition = "Number of loans in SERVICER1 that are not paid off."
+sql = "SELECT COUNT(*) AS active_loans FROM LOAN.PUBLIC.SERVICER1 WHERE LOAN_STATUS NOT IN ('PAID_CLOSED', 'PAID_OPEN')"
+
+[metrics."Total Principal Balance"]
+definition = "Sum of current outstanding principal across all loans in SERVICER1."
+sql = "SELECT SUM(PRIN_BAL) AS total_principal_balance FROM LOAN.PUBLIC.SERVICER1"
+
+[metrics."Weighted Average Interest Rate"]
+definition = "Average current interest rate weighted by principal balance (SERVICER1). Rate is TEXT like '4.5%' and must be parsed."
+sql = "SELECT SUM(TRY_CAST(REPLACE(CURRENT_INTEREST_RATE, '%', '') AS FLOAT) * PRIN_BAL) / NULLIF(SUM(PRIN_BAL), 0) AS wac_pct FROM LOAN.PUBLIC.SERVICER1"
+
+[metrics."Reconciliation Match Rate"]
+definition = "Percentage of CUSIP positions in RECON_OP where the security identifier reconciles (CUSIP_REC = TRUE)."
+sql = "SELECT 100.0 * COUNT_IF(CUSIP_REC = TRUE) / NULLIF(COUNT(*), 0) AS cusip_match_rate_pct FROM LOAN.PUBLIC.RECON_OP"

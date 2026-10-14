@@ -1,0 +1,156 @@
+database = "PRIVATEEQUITY"
+display_name = "Private Equity Fund"
+description = "Private equity fund data: portfolio companies, valuations, investor positions, fund expenses, and risk limits."
+
+join_rules = """
+- PRIVATEEQUITY is the core portfolio company table. Most other tables join to it via SECURITY_ID.
+- PE_VALUATIONS joins PRIVATEEQUITY on SECURITY_ID (quarterly valuations per company).
+- PE_INVESTORS is the LP investor master. PE_INVESTOR_POSITIONS joins PE_INVESTORS on INVESTOR_ID.
+- PE_FUND_MASTER has exactly 1 row. Join to PE_FUND_EXPENSES on FUND_ID, join to PE_RISK_LIMITS on FUND_ID.
+- PRIVATEEQUITY and PE_INVESTORS do NOT join directly.
+- Always use LEFT JOIN when the right side may not have matching rows.
+- Never use implicit joins or cartesian products.
+"""
+
+dashboard_heuristics = """
+- If the user asks about portfolio overview, include panels for: company count by sector, cost basis vs current value by company, stage breakdown, and covenant status.
+- If the user asks about risk or concentration, query PE_RISK_LIMITS and show limit vs current level, highlighting breaches (STATUS = 'Breach') in red.
+- If the user asks about investor positions or LP performance, query PE_INVESTOR_POSITIONS for the latest quarter. Show TVPI, DPI, RVPI, gross IRR per investor.
+- If the user asks about valuations, query PE_VALUATIONS for the latest quarter. Show fair value vs cost basis, unrealized gain/loss, MOIC.
+- If the user asks about warrants, filter PRIVATEEQUITY where HAS_WARRANT = TRUE. Show warrant shares, strike price, expiry date.
+- For "at-risk" or "problem companies", filter PRIVATEEQUITY where COVENANT_STATUS IN ('Breach Risk', 'Monitoring').
+- All numeric columns are actual NUMBER type — no text parsing needed.
+"""
+
+# ── Semantic Layer ──────────────────────────────────────────────
+
+[tables."PRIVATEEQUITY.PUBLIC.PRIVATEEQUITY"]
+description = "Core portfolio company table. Each row is one equity investment."
+notes = "Central fact table. Join PE_VALUATIONS on SECURITY_ID. STAGE values: Series A, Series B, Series C, Series D, Growth, Buyout. COVENANT_STATUS values: Compliant, Monitoring, Breach Risk."
+[tables."PRIVATEEQUITY.PUBLIC.PRIVATEEQUITY".key_columns]
+SECURITY_ID = "Unique company identifier (TEXT). Primary key."
+SECURITY_NAME = "Investment name (TEXT)"
+SECTOR = "Values: Agriculture, Consumer, Education, Energy, Healthcare, Industrials, Life Sciences, Retail, Technology"
+GEOGRAPHY = "Values: Brazil, Europe, Germany, UK, USA"
+ENTRY_DATE = "Investment entry date (DATE)"
+COST_BASIS = "Total cost of investment (NUMBER)"
+CURRENT_VALUE = "Current fair value (NUMBER)"
+OWNERSHIP_PCT = "Ownership percentage (NUMBER)"
+REVENUE = "Company revenue (NUMBER)"
+EBITDA = "Company EBITDA (NUMBER)"
+ENTRY_MULTIPLE = "Entry valuation multiple (NUMBER)"
+STAGE = "Values: Series A, Series B, Series C, Series D, Growth, Buyout"
+HAS_WARRANT = "Has warrants (BOOLEAN). Filter with: HAS_WARRANT = TRUE"
+WARRANT_SHARES = "Number of warrant shares (NUMBER)"
+WARRANT_STRIKE = "Warrant strike price (NUMBER)"
+WARRANT_EXPIRY_DATE = "Warrant expiry date (DATE)"
+LAST_ROUND_VALUATION = "Last funding round valuation (NUMBER)"
+COVENANT_STATUS = "Values: Compliant, Monitoring, Breach Risk"
+# Investment lifecycle dates. ENTRY_DATE is when the position was entered; there
+# is no as-of/snapshot date on this fact table (use PE_VALUATIONS for that).
+[tables."PRIVATEEQUITY.PUBLIC.PRIVATEEQUITY".date_roles]
+ENTRY_DATE = "entry_date"
+LAST_ROUND_DATE = "last_round_date"
+WARRANT_EXPIRY_DATE = "warrant_expiry_date"
+
+[tables."PRIVATEEQUITY.PUBLIC.PE_VALUATIONS"]
+description = "Quarterly valuations per portfolio company."
+notes = "Joins to PRIVATEEQUITY on SECURITY_ID. MOIC = Multiple on Invested Capital (>1.0 = positive). VALUATION_METHODOLOGY values: Comparable Company Analysis, Recent Transaction / Last Round."
+[tables."PRIVATEEQUITY.PUBLIC.PE_VALUATIONS".key_columns]
+SECURITY_ID = "Company identifier (TEXT). FK to PRIVATEEQUITY."
+QUARTER_LABEL = "e.g. 'Q1 2025' (TEXT)"
+VALUATION_DATE = "Valuation date (DATE). Use for sorting."
+COST_BASIS = "Cost basis at valuation (NUMBER)"
+FAIR_VALUE = "Fair value at valuation (NUMBER)"
+UNREALIZED_GAIN_LOSS = "Fair value minus cost basis (NUMBER)"
+MOIC = "Multiple on invested capital (NUMBER)"
+VALUATION_METHODOLOGY = "Values: Comparable Company Analysis, Recent Transaction / Last Round"
+COVENANT_STATUS = "Covenant status at valuation. Values: Compliant, Monitoring, Breach Risk"
+# VALUATION_DATE is the as-of/valuation date — the snapshot date for this table.
+[tables."PRIVATEEQUITY.PUBLIC.PE_VALUATIONS".date_roles]
+VALUATION_DATE = "valuation_date"
+
+[tables."PRIVATEEQUITY.PUBLIC.PE_INVESTORS"]
+description = "LP investor master table."
+notes = "Joins to PE_INVESTOR_POSITIONS on INVESTOR_ID."
+[tables."PRIVATEEQUITY.PUBLIC.PE_INVESTORS".key_columns]
+INVESTOR_ID = "Unique investor ID (TEXT). Primary key."
+INVESTOR_NAME = "LP name (TEXT)"
+INVESTOR_TYPE = "Values: Endowment, Family Office, Insurance Company, Pension Fund, Sovereign Wealth Fund"
+DOMICILE = "Investor domicile (TEXT)"
+COMMITMENT_AMOUNT = "Capital committed (NUMBER)"
+MANAGEMENT_FEE_PCT = "Management fee rate (NUMBER)"
+CARRY_PCT = "Carried interest percentage (NUMBER)"
+PREFERRED_RETURN_PCT = "Preferred return hurdle (NUMBER)"
+# LP onboarding lifecycle dates (this master has no as-of/snapshot date; use
+# PE_INVESTOR_POSITIONS.QUARTER_END_DATE for point-in-time position queries).
+[tables."PRIVATEEQUITY.PUBLIC.PE_INVESTORS".date_roles]
+COMMITMENT_DATE = "commitment_date"
+ONBOARDING_DATE = "onboarding_date"
+
+[tables."PRIVATEEQUITY.PUBLIC.PE_INVESTOR_POSITIONS"]
+description = "Quarterly investor positions and performance."
+notes = "Joins to PE_INVESTORS on INVESTOR_ID. For latest quarter, filter by MAX(QUARTER_END_DATE)."
+[tables."PRIVATEEQUITY.PUBLIC.PE_INVESTOR_POSITIONS".key_columns]
+INVESTOR_ID = "FK to PE_INVESTORS (TEXT)"
+INVESTOR_NAME = "LP name (TEXT)"
+QUARTER_LABEL = "e.g. 'Q1 2025' (TEXT)"
+QUARTER_END_DATE = "Quarter end date (DATE). Use for sorting."
+CUMULATIVE_COMMITMENT = "Total commitment (NUMBER)"
+TOTAL_CAPITAL_CALLED = "Cumulative capital called (NUMBER)"
+NAV_THIS_QUARTER = "NAV this quarter (NUMBER)"
+TVPI = "Total Value to Paid-In (NUMBER). >1.0 = positive."
+DPI = "Distributions to Paid-In (NUMBER)"
+RVPI = "Residual Value to Paid-In (NUMBER)"
+GROSS_IRR_PCT = "Gross IRR (NUMBER)"
+# QUARTER_END_DATE is the as-of/snapshot date for an investor position.
+[tables."PRIVATEEQUITY.PUBLIC.PE_INVESTOR_POSITIONS".date_roles]
+QUARTER_END_DATE = "snapshot_date"
+
+[tables."PRIVATEEQUITY.PUBLIC.PE_FUND_MASTER"]
+description = "Fund metadata. 1 row."
+notes = "FUND_ID joins to PE_FUND_EXPENSES and PE_RISK_LIMITS."
+[tables."PRIVATEEQUITY.PUBLIC.PE_FUND_MASTER".key_columns]
+FUND_ID = "Fund identifier (TEXT)"
+FUND_NAME = "Fund name (TEXT)"
+FUND_TYPE = "Fund type (TEXT)"
+VINTAGE_YEAR = "Vintage year (NUMBER)"
+FUND_SIZE_TARGET = "Target size (NUMBER)"
+FUND_SIZE_HARD_CAP = "Hard cap (NUMBER)"
+TOTAL_COMMITMENTS = "Total commitments (NUMBER)"
+GP_COMMITMENT = "GP commitment (NUMBER)"
+TARGET_GROSS_IRR_PCT = "Target gross IRR (NUMBER)"
+TARGET_NET_IRR_PCT = "Target net IRR (NUMBER)"
+# Fund formation dates. NOTE: unlike the assumption that PE_FUND_MASTER is
+# dateless, it carries three real DATE columns — annotated here by role.
+[tables."PRIVATEEQUITY.PUBLIC.PE_FUND_MASTER".date_roles]
+FUND_INCEPTION_DATE = "inception_date"
+FIRST_CLOSE_DATE = "first_close_date"
+FINAL_CLOSE_DATE = "final_close_date"
+
+[tables."PRIVATEEQUITY.PUBLIC.PE_FUND_EXPENSES"]
+description = "Quarterly fund operating expenses."
+notes = "Joins to PE_FUND_MASTER on FUND_ID."
+[tables."PRIVATEEQUITY.PUBLIC.PE_FUND_EXPENSES".key_columns]
+QUARTER_LABEL = "Quarter label (TEXT)"
+QUARTER_END_DATE = "Quarter end date (DATE)"
+TOTAL_FUND_EXPENSES = "Total expenses (NUMBER)"
+CASH_BALANCE_END_OF_QUARTER = "Cash balance (NUMBER)"
+UNDRAWN_CREDIT_FACILITY = "Undrawn facility (NUMBER)"
+# QUARTER_END_DATE is the as-of/snapshot date for the quarter's expenses.
+[tables."PRIVATEEQUITY.PUBLIC.PE_FUND_EXPENSES".date_roles]
+QUARTER_END_DATE = "snapshot_date"
+
+[tables."PRIVATEEQUITY.PUBLIC.PE_RISK_LIMITS"]
+description = "Fund risk and concentration limits."
+notes = "STATUS values: Breach, Compliant. Current level column is CURRENT_LEVEL_PCT_Q2_2026."
+[tables."PRIVATEEQUITY.PUBLIC.PE_RISK_LIMITS".key_columns]
+LIMIT_TYPE = "Limit description (TEXT)"
+LIMIT_THRESHOLD_PCT = "Threshold percentage (NUMBER)"
+CURRENT_LEVEL_PCT_Q2_2026 = "Current level as of Q2 2026 (NUMBER)"
+STATUS = "Values: Breach, Compliant"
+# INTENTIONALLY DATELESS: no date/timestamp column. CURRENT_LEVEL_PCT_Q2_2026 is
+# a single fixed-quarter snapshot baked into the column name, not a rolling date,
+# so this table CANNOT support a date parameter. Marked explicitly (not merely
+# un-annotated) so it is distinguishable from a table awaiting annotation. Same
+# situation as PRIVATECREDIT.PC_RISK_LIMITS. (No date_roles.)

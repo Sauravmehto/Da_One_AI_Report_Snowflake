@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#312E81" />
+    <title>AI Reporting</title>
+    <meta
+      name="description"
+      content="Ask questions of warehouse and file data, then turn the answers into dashboards and reports."
+    />
+    <!-- Relative, because the deployment hostname is not known at build time.
+         Slack and LinkedIn resolve it against the page; a few older crawlers
+         want an absolute URL and will fall back to no image. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="AI Reporting" />
+    <meta
+      property="og:description"
+      content="Ask questions of warehouse and file data, then turn the answers into dashboards and reports."
+    />
+    <meta property="og:image" content="/og-image.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

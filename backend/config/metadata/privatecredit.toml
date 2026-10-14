@@ -1,0 +1,259 @@
+database = "PRIVATECREDIT"
+display_name = "Private Credit Fund"
+description = """
+Private credit fund data: 
+deals, cashflows, quarterly marks, borrower financials, investor positions, fund expenses, risk limits, and FX rates."""
+join_rules = """
+- PRIVATE_CREDIT is the central deal/loan table. Most other tables join to it via SECURITY_ID.
+- PC_CASHFLOW joins PRIVATE_CREDIT on SECURITY_ID (payment schedule per deal).
+- PC_MARKS joins PRIVATE_CREDIT on SECURITY_ID (quarterly valuations per deal).
+- PC_BORROWER_FINANCIALS joins PRIVATE_CREDIT on SECURITY_ID (annual borrower financials).
+- PC_INVESTORS is the LP investor master. PC_INVESTOR_POSITIONS joins PC_INVESTORS on INVESTOR_ID (quarterly investor-level positions).
+- PC_FUND_MASTER has exactly 1 row — the fund itself. Join to PC_FUND_EXPENSES on FUND_ID, join to PC_RISK_LIMITS on FUND_ID.
+- PC_FX_RATES is a standalone FX rate lookup. Join on QUARTER_LABEL or RATE_DATE when converting currencies.
+- PRIVATE_CREDIT and PC_INVESTORS do NOT join directly. To connect deals to investors, summarize at fund level.
+- Always use LEFT JOIN when the right side may not have matching rows.
+- Never use implicit joins or cartesian products.
+"""
+dashboard_heuristics = """
+- If the user asks about portfolio overview, include panels for: deal count by sector, principal by geography, covenant status breakdown, and loan status mix.
+- If the user asks about risk or concentration, query PC_RISK_LIMITS and show limit vs current level, highlighting breaches (STATUS = 'Breach') in red.
+- If the user asks about investor positions or LP performance, query PC_INVESTOR_POSITIONS for the latest quarter. Show TVPI, DPI, RVPI, gross IRR per investor. Join to PC_INVESTORS for investor type.
+- If the user asks about cashflows or payments, query PC_CASHFLOW. Show payment status breakdown, days late distribution, scheduled vs actual payments.
+- If the user asks about marks or valuations, query PC_MARKS for the latest quarter. Show fair value vs outstanding principal, unrealized gain/loss, mark-to-par.
+- If the user asks about borrower health, query PC_BORROWER_FINANCIALS. Show leverage ratio, interest coverage, EBITDA margin across borrowers.
+- If the user asks about fund expenses, query PC_FUND_EXPENSES. Show expense trend by quarter, expense breakdown by category.
+- For \"watch-list\" or \"problem loans\", filter PRIVATE_CREDIT where LOAN_STATUS = 'Watch-list' OR COVENANT_STATUS IN ('Breach Risk', 'Monitoring').
+- QUARTER_LABEL is a TEXT field with values like 'Q1 2025'. For time-series ordering, use QUARTER_END_DATE (DATE) when available, or sort QUARTER_LABEL alphabetically which works for this format.
+- All numeric columns in this database are actual NUMBER type — no text parsing needed unlike the LOAN database.
+"""
+
+[tables."PRIVATECREDIT.PUBLIC.PRIVATE_CREDIT"]
+description = "Core deal/loan table. One row per private credit investment."
+notes = "Central fact table. Join other tables to this via SECURITY_ID. LOAN_STATUS values: Active, Extended, Matured-Pending, Watch-list. COVENANT_STATUS values: Compliant, Monitoring, Breach Risk."
+
+[tables."PRIVATECREDIT.PUBLIC.PRIVATE_CREDIT".key_columns]
+SECURITY_ID = "Unique deal identifier (TEXT). Primary key. Used to join PC_CASHFLOW, PC_MARKS, PC_BORROWER_FINANCIALS."
+SECURITY_NAME = "Human-readable deal name (TEXT)"
+BORROWER_NAME = "Borrower company name (TEXT)"
+SECTOR = "Industry sector. Values: Energy, Healthcare, Industrials, Retail, Technology"
+GEOGRAPHY = "Country. Values: Canada, Germany, UK, USA"
+PRINCIPAL = "Original principal amount (NUMBER)"
+CURRENT_VALUE = "Current fair value of the position (NUMBER)"
+INTEREST_RATE_PCT = "Cash interest rate, stored as a 0-1 FRACTION (e.g. 0.14 = 14%). Multiply by 100 to emit it as a percentage: INTEREST_RATE_PCT * 100."
+PIK_RATE_PCT = "Payment-in-kind interest rate, stored as a 0-1 FRACTION (e.g. 0.03 = 3%). Multiply by 100 to emit it as a percentage: PIK_RATE_PCT * 100."
+LTV_PCT = "Loan-to-value, stored as a 0-1 FRACTION (e.g. 0.55 = 55%). Multiply by 100 to emit it as a percentage: LTV_PCT * 100."
+DSCR = "Debt service coverage ratio (NUMBER). Higher is safer."
+LOAN_STATUS = "Current status. Values: Active, Extended, Matured-Pending, Watch-list. Filter problem loans with: LOAN_STATUS IN ('Watch-list', 'Matured-Pending')"
+COVENANT_STATUS = "Covenant compliance. Values: Compliant, Monitoring, Breach Risk. Filter at-risk with: COVENANT_STATUS IN ('Breach Risk', 'Monitoring')"
+PAYMENT_TYPE = "Values: Amortizing, Bullet"
+REPAYMENT_FREQUENCY = "Values: Monthly, Quarterly, Semi-Annual"
+COLLATERAL_TYPE = "Values: IP & Software, Plant & Machinery, Real Assets, Receivables, Receivables & Inventory"
+MATURITY_DATE = "Loan maturity date (DATE)"
+ORIGINATION_DATE = "Loan origination date (DATE)"
+BORROWER_LEVERAGE_RATIO = "Borrower's debt/EBITDA ratio (NUMBER). Higher = more leveraged."
+INTEREST_COVERAGE_RATIO = "Borrower's EBITDA/interest ratio (NUMBER). Higher = more cushion."
+TOTAL_INTEREST_RECEIVED = "Cumulative interest received to date (NUMBER)"
+TOTAL_PRINCIPAL_REPAID = "Cumulative principal repaid to date (NUMBER)"
+
+[tables."PRIVATECREDIT.PUBLIC.PRIVATE_CREDIT".date_roles]
+ORIGINATION_DATE = "origination_date"
+MATURITY_DATE = "maturity_date"
+LAST_PAYMENT_DATE = "last_payment_date"
+NEXT_PAYMENT_DATE = "next_payment_date"
+
+[tables."PRIVATECREDIT.PUBLIC.PC_CASHFLOW"]
+description = "Period-by-period cashflow schedule. One row per deal per payment period."
+notes = "Joins to PRIVATE_CREDIT on SECURITY_ID. PAYMENT_STATUS values: Paid, Scheduled, Extended, Pending-Extension. Use DAYS_LATE > 0 to find late payments."
+
+[tables."PRIVATECREDIT.PUBLIC.PC_CASHFLOW".key_columns]
+SECURITY_ID = "Deal identifier (TEXT). FK to PRIVATE_CREDIT."
+BORROWER_NAME = "Borrower company name (TEXT)"
+PAYMENT_DATE = "Scheduled payment date (DATE)"
+PERIOD_TYPE = "Type of payment period (TEXT)"
+OPENING_BALANCE = "Principal balance at start of period (NUMBER)"
+SCHEDULED_INTEREST = "Interest due for this period (NUMBER)"
+PIK_INTEREST = "Payment-in-kind interest accrued (NUMBER)"
+SCHEDULED_PRINCIPAL = "Principal due for this period (NUMBER)"
+TOTAL_PAYMENT = "Total scheduled payment: interest + principal (NUMBER)"
+ACTUAL_PAYMENT = "Amount actually received (NUMBER). Compare to TOTAL_PAYMENT."
+CLOSING_BALANCE = "Principal balance at end of period (NUMBER)"
+PAYMENT_STATUS = "Values: Paid, Scheduled, Extended, Pending-Extension"
+DAYS_LATE = "Number of days the payment was late (NUMBER). 0 = on time."
+
+[tables."PRIVATECREDIT.PUBLIC.PC_CASHFLOW".date_roles]
+PAYMENT_DATE = "payment_date"
+PAYMENT_RECEIVED_DATE = "payment_received_date"
+
+[tables."PRIVATECREDIT.PUBLIC.PC_MARKS"]
+description = "Quarterly mark-to-market valuations per deal."
+notes = "Joins to PRIVATE_CREDIT on SECURITY_ID. Each row is one deal at one quarter-end. MARK_METHODOLOGY values: Cost, DCF."
+
+[tables."PRIVATECREDIT.PUBLIC.PC_MARKS".key_columns]
+SECURITY_ID = "Deal identifier (TEXT). FK to PRIVATE_CREDIT."
+QUARTER_LABEL = "Quarter label e.g. 'Q1 2025' (TEXT)"
+MARK_DATE = "Valuation date (DATE)"
+OUTSTANDING_PRINCIPAL = "Principal outstanding at mark date (NUMBER)"
+FAIR_VALUE = "Fair value of the position (NUMBER)"
+UNREALIZED_GAIN_LOSS = "Unrealized gain/loss = Fair Value - Outstanding Principal (NUMBER). Positive = gain."
+MARK_TO_PAR = "Fair value as a RATIO to par/principal (NUMBER). 1.0 = at par (i.e. 100%). Already a display-ready ratio — do NOT rescale it."
+DSCR_AT_MARK = "DSCR at the time of this valuation (NUMBER)"
+LTV_AT_MARK = "LTV at the time of this valuation (NUMBER)"
+COVENANT_STATUS = "Covenant compliance at mark date. Values: Compliant, Monitoring, Breach Risk"
+TOTAL_INCOME_ACCRUED = "Total income (cash + PIK) accrued at mark date (NUMBER)"
+MARK_METHODOLOGY = "Valuation method. Values: Cost, DCF"
+
+[tables."PRIVATECREDIT.PUBLIC.PC_MARKS".date_roles]
+MARK_DATE = "snapshot_date"
+
+[tables."PRIVATECREDIT.PUBLIC.PC_BORROWER_FINANCIALS"]
+description = "Annual borrower-level financial statements."
+notes = "Joins to PRIVATE_CREDIT on SECURITY_ID. One row per borrower per fiscal year."
+
+[tables."PRIVATECREDIT.PUBLIC.PC_BORROWER_FINANCIALS".key_columns]
+SECURITY_ID = "Deal identifier (TEXT). FK to PRIVATE_CREDIT."
+BORROWER_NAME = "Borrower company name (TEXT)"
+FISCAL_YEAR = "Fiscal year (NUMBER, e.g. 2023, 2024, 2025)"
+REVENUE = "Annual revenue (NUMBER)"
+EBITDA = "Earnings before interest, taxes, depreciation, amortization (NUMBER)"
+NET_INCOME = "Net income (NUMBER)"
+TOTAL_DEBT = "Total debt outstanding (NUMBER)"
+CASH = "Cash and equivalents (NUMBER)"
+NET_DEBT = "Net debt = Total Debt - Cash (NUMBER)"
+EQUITY = "Total equity (NUMBER)"
+EBITDA_MARGIN_PCT = "EBITDA as a share of revenue, stored as a 0-1 FRACTION (e.g. 0.30 = 30%). Multiply by 100 to emit it as a percentage: EBITDA_MARGIN_PCT * 100."
+LEVERAGE_RATIO = "Total Debt / EBITDA (NUMBER). Lower is safer."
+INTEREST_COVERAGE = "EBITDA / Interest Expense (NUMBER). Higher is safer."
+DEBT_TO_EQUITY = "Total Debt / Equity (NUMBER)"
+
+[tables."PRIVATECREDIT.PUBLIC.PC_INVESTORS"]
+description = "LP investor master table. One row per investor."
+notes = "Joins to PC_INVESTOR_POSITIONS on INVESTOR_ID. Contains fee terms, commitment amounts, and contact info."
+
+[tables."PRIVATECREDIT.PUBLIC.PC_INVESTORS".key_columns]
+INVESTOR_ID = "Unique investor identifier (TEXT). Primary key."
+INVESTOR_NAME = "LP name (TEXT)"
+INVESTOR_TYPE = "Values: Endowment, Family Office, Insurance Company, Pension Fund, Sovereign Wealth Fund"
+DOMICILE = "Investor domicile country (TEXT)"
+COMMITMENT_AMOUNT = "Total capital committed (NUMBER)"
+COMMITMENT_PCT_OF_FUND = "Investor's share of fund as percentage (NUMBER)"
+INVESTOR_STATUS = "Current status (TEXT)"
+MANAGEMENT_FEE_PCT = "Management fee rate (NUMBER)"
+CARRY_PCT = "Carried interest percentage (NUMBER)"
+PREFERRED_RETURN_PCT = "Preferred return hurdle (NUMBER)"
+
+[tables."PRIVATECREDIT.PUBLIC.PC_INVESTOR_POSITIONS"]
+description = "Quarterly investor-level positions showing capital activity, NAV, and performance."
+notes = "Joins to PC_INVESTORS on INVESTOR_ID. One row per investor per quarter. QUARTER_LABEL values range from 'Q3 2022' to 'Q2 2026'. For the latest quarter, filter by MAX(QUARTER_END_DATE)."
+
+[tables."PRIVATECREDIT.PUBLIC.PC_INVESTOR_POSITIONS".key_columns]
+INVESTOR_ID = "Investor identifier (TEXT). FK to PC_INVESTORS."
+INVESTOR_NAME = "LP name (TEXT)"
+QUARTER_LABEL = "Quarter label e.g. 'Q1 2025' (TEXT)"
+QUARTER_END_DATE = "Quarter end date (DATE). Use this for sorting and time-series, not QUARTER_LABEL."
+CUMULATIVE_COMMITMENT = "Total commitment (NUMBER)"
+TOTAL_CAPITAL_CALLED = "Cumulative capital called to date (NUMBER)"
+UNCALLED_COMMITMENT = "Remaining uncalled capital (NUMBER)"
+CAPITAL_CALLED_PCT = "Percentage of commitment called (NUMBER)"
+TOTAL_DISTRIBUTIONS = "Cumulative distributions to date (NUMBER)"
+NAV_THIS_QUARTER = "Net asset value this quarter (NUMBER)"
+TVPI = "Total Value to Paid-In ratio (NUMBER). >1.0 = positive return."
+DPI = "Distributions to Paid-In ratio (NUMBER). Cash-on-cash return measure."
+RVPI = "Residual Value to Paid-In ratio (NUMBER). Unrealized value remaining."
+GROSS_IRR_PCT = "Gross internal rate of return (NUMBER)"
+MGMT_FEE_IN_QUARTER = "Management fee charged this quarter (NUMBER)"
+CARRY_ACCRUED_TO_DATE = "Carried interest accrued to date (NUMBER)"
+
+[tables."PRIVATECREDIT.PUBLIC.PC_INVESTOR_POSITIONS".date_roles]
+QUARTER_END_DATE = "snapshot_date"
+
+[tables."PRIVATECREDIT.PUBLIC.PC_FUND_MASTER"]
+description = "Fund-level metadata. Exactly 1 row — the fund itself."
+notes = "Single-row reference table. Use for fund name, target size, vintage, fee basis, service providers. FUND_ID joins to PC_FUND_EXPENSES and PC_RISK_LIMITS."
+
+[tables."PRIVATECREDIT.PUBLIC.PC_FUND_MASTER".key_columns]
+FUND_ID = "Fund identifier (TEXT). Primary key."
+FUND_NAME = "Fund name (TEXT)"
+FUND_TYPE = "Fund type (TEXT)"
+VINTAGE_YEAR = "Fund vintage year (NUMBER)"
+FUND_SIZE_TARGET = "Target fund size (NUMBER)"
+FUND_SIZE_HARD_CAP = "Hard cap fund size (NUMBER)"
+TOTAL_COMMITMENTS = "Total LP commitments (NUMBER)"
+GP_COMMITMENT = "General partner commitment (NUMBER)"
+TARGET_GROSS_IRR_PCT = "Target gross IRR (NUMBER)"
+TARGET_NET_IRR_PCT = "Target net IRR (NUMBER)"
+
+[tables."PRIVATECREDIT.PUBLIC.PC_FUND_EXPENSES"]
+description = "Quarterly fund operating expenses."
+notes = "Joins to PC_FUND_MASTER on FUND_ID. One row per quarter."
+
+[tables."PRIVATECREDIT.PUBLIC.PC_FUND_EXPENSES".key_columns]
+FUND_ID = "Fund identifier (TEXT). FK to PC_FUND_MASTER."
+QUARTER_LABEL = "Quarter label e.g. 'Q1 2025' (TEXT)"
+QUARTER_END_DATE = "Quarter end date (DATE)"
+TOTAL_FUND_EXPENSES = "Total operating expenses for the quarter (NUMBER)"
+CASH_BALANCE_END_OF_QUARTER = "Cash balance at quarter end (NUMBER)"
+UNDRAWN_CREDIT_FACILITY = "Available undrawn credit facility (NUMBER)"
+FUND_ADMIN_FEE = "Fund administration fee (NUMBER)"
+AUDIT_FEE = "Audit fee (NUMBER)"
+LEGAL_FEE = "Legal fee (NUMBER)"
+
+[tables."PRIVATECREDIT.PUBLIC.PC_FUND_EXPENSES".date_roles]
+QUARTER_END_DATE = "snapshot_date"
+
+[tables."PRIVATECREDIT.PUBLIC.PC_FX_RATES"]
+description = "Quarterly FX rates for multi-currency reporting. One row per currency pair per rate date."
+notes = "Standalone lookup table. Join on QUARTER_LABEL or RATE_DATE. CURRENCY_PAIR format is 'XXX/USD'."
+
+[tables."PRIVATECREDIT.PUBLIC.PC_FX_RATES".key_columns]
+QUARTER_LABEL = "Quarter label (TEXT)"
+RATE_DATE = "Rate observation date (DATE)"
+CURRENCY_PAIR = "Currency pair e.g. 'EUR/USD' (TEXT)"
+RATE_TO_USD = "Exchange rate to USD (NUMBER)"
+
+[tables."PRIVATECREDIT.PUBLIC.PC_FX_RATES".date_roles]
+RATE_DATE = "snapshot_date"
+
+[tables."PRIVATECREDIT.PUBLIC.PC_RISK_LIMITS"]
+description = "Fund-level risk and concentration limits with current levels and breach status. One row per limit."
+notes = "Joins to PC_FUND_MASTER on FUND_ID. STATUS values: Compliant, Breach. LIMIT_CATEGORY values: Asset Quality, Currency, Diversification, Geography, Leverage, Liquidity, Sector, Single-Name. To find breaches, filter STATUS = 'Breach' rather than assuming a count."
+
+[tables."PRIVATECREDIT.PUBLIC.PC_RISK_LIMITS".key_columns]
+FUND_ID = "Fund identifier (TEXT). FK to PC_FUND_MASTER."
+LIMIT_CATEGORY = "Category: Asset Quality, Currency, Diversification, Geography, Leverage, Liquidity, Sector, Single-Name"
+LIMIT_TYPE = "Specific limit description (TEXT)"
+LIMIT_THRESHOLD_PCT = "Limit threshold as percentage (NUMBER)"
+CURRENT_LEVEL_PCT_Q1_2026 = "Current level as of Q1 2026 (NUMBER). Compare to LIMIT_THRESHOLD_PCT."
+STATUS = "Values: Compliant, Breach. Filter breaches with: STATUS = 'Breach'"
+
+[metrics."Total Unrealized Gain/Loss"]
+definition = "Portfolio-wide unrealized gain or loss: current fair value minus original principal across all deals."
+sql = "SELECT SUM(CURRENT_VALUE) - SUM(PRINCIPAL) AS total_unrealized_gl FROM PRIVATECREDIT.PUBLIC.PRIVATE_CREDIT"
+
+[metrics."Portfolio Mark-to-Par"]
+definition = "Current fair value as a percentage of original principal across the whole portfolio. 100% means valued at par."
+sql = "SELECT 100.0 * SUM(CURRENT_VALUE) / NULLIF(SUM(PRINCIPAL), 0) AS mark_to_par_pct FROM PRIVATECREDIT.PUBLIC.PRIVATE_CREDIT"
+
+[metrics."Weighted Average Interest Rate"]
+definition = "Cash interest rate across the portfolio, weighted by principal. Excludes PIK."
+sql = "SELECT 100.0 * SUM(INTEREST_RATE_PCT * PRINCIPAL) / NULLIF(SUM(PRINCIPAL), 0) AS wac_pct FROM PRIVATECREDIT.PUBLIC.PRIVATE_CREDIT"
+
+[metrics."Average DSCR"]
+definition = "Average debt service coverage ratio across all deals. Higher is safer."
+sql = "SELECT AVG(DSCR) AS avg_dscr FROM PRIVATECREDIT.PUBLIC.PRIVATE_CREDIT"
+
+[metrics."Watch-list Exposure"]
+definition = "Total principal tied up in deals flagged Watch-list, and its share of the portfolio."
+sql = "SELECT SUM(CASE WHEN LOAN_STATUS = 'Watch-list' THEN PRINCIPAL ELSE 0 END) AS watchlist_principal, 100.0 * SUM(CASE WHEN LOAN_STATUS = 'Watch-list' THEN PRINCIPAL ELSE 0 END) / NULLIF(SUM(PRINCIPAL), 0) AS watchlist_pct FROM PRIVATECREDIT.PUBLIC.PRIVATE_CREDIT"
+
+[metrics."Covenant At-Risk Deal Count"]
+definition = "Number of deals whose covenant status is not fully compliant (Breach Risk or Monitoring)."
+sql = "SELECT COUNT_IF(COVENANT_STATUS IN ('Breach Risk', 'Monitoring')) AS at_risk_deals FROM PRIVATECREDIT.PUBLIC.PRIVATE_CREDIT"
+
+[metrics."Risk Limit Breach Count"]
+definition = "Number of fund-level risk limits currently in breach."
+sql = "SELECT COUNT_IF(STATUS = 'Breach') AS breached_limits FROM PRIVATECREDIT.PUBLIC.PC_RISK_LIMITS"
+
+[metrics."Late Payment Count"]
+definition = "Number of cashflow periods where the payment was received late (days late greater than zero)."
+sql = "SELECT COUNT_IF(DAYS_LATE > 0) AS late_payments FROM PRIVATECREDIT.PUBLIC.PC_CASHFLOW"

@@ -1,0 +1,52 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+boto3 = "*"
+fastapi = {extras = ["standard"], version = ">=0.115.0"}
+pydantic = ">=2.10.0"
+pydantic-settings = ">=2.6.0"
+python-dotenv = ">=1.0.0"
+snowflake-connector-python = ">=3.12.0"
+redis = ">=5.2.0"
+pyjwt = ">=2.10.0"
+httpx = ">=0.27.0"
+cryptography = ">=44.0.0"
+anthropic = "*"
+# tomllib (stdlib) reads TOML but cannot write it; the semantic-layer editor
+# has to serialise documents back out.
+tomli-w = ">=1.0.0"
+# The read-only SQL gate parses every query into a syntax tree rather than
+# keyword-matching it (app/engine/sql_safety.py). Also carries the dialect
+# handling that a second warehouse vendor would need.
+sqlglot = ">=25.0.0"
+# Excel template scanning and report generation — reads a workbook's formulas,
+# refills its data sheet, re-extends ranges (app/engine/excel_*.py).
+openpyxl = ">=3.1.0"
+# openpyxl reads only the OOXML formats (.xlsx/.xlsm). Client workbooks are
+# routinely still legacy OLE2 .xls, which only xlrd 2.x reads — it dropped
+# .xlsx support precisely so it could stay the .xls reader.
+xlrd = ">=2.0.0"
+# Query engine for uploaded spreadsheets. An embedded file-backed database, so
+# a workbook a client has no warehouse for still becomes real SQL — which keeps
+# every number the user sees computed by an engine rather than read out of a
+# cell by a model. sqlglot already validates the "duckdb" dialect.
+duckdb = ">=1.0.0"
+# Uploaded documents. PyMuPDF reads the text layer and the table geometry of a
+# PDF; it does no OCR, so a scanned page is reported as having no text rather
+# than silently indexing nothing.
+pymupdf = ">=1.24.0"
+# Word documents arrive alongside the PDFs in the same folders.
+python-docx = ">=1.1.0"
+
+[dev-packages]
+pytest = ">=8.3.0"
+pytest-asyncio = ">=0.24.0"
+# In-process Redis for the conversation/session store tests, so the suite runs
+# without a Redis server.
+fakeredis = ">=2.20.0"
+
+[requires]
+python_version = "3.12"

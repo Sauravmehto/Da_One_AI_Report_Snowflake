@@ -1,0 +1,162 @@
+database = "REALESTATEFUND"
+display_name = "Real Estate Fund"
+description = "Real estate fund data: properties, debt positions, quarterly valuations, investor positions, fund expenses, and risk limits."
+join_rules = """
+- RE_PROPERTIES is the property portfolio table. Each row is one real estate asset.
+- RE_DEBT_POSITIONS is the debt/loan portfolio table. Each row is one debt investment (mezzanine, bridge, etc.).
+- RE_VALUATIONS contains quarterly valuations. Join on ASSET_ID which maps to PROPERTY_ID or DEBT_ID.
+- RE_INVESTOR_POSITIONS has quarterly investor data. No separate investor master table — investor details are inline.
+- RE_FUND_MASTER has exactly 1 row — the fund itself. Join to RE_RISK_LIMITS on FUND_ID.
+- RE_PROPERTIES and RE_DEBT_POSITIONS are separate tables representing different asset types. UNION ALL them for a combined portfolio view, aliasing columns to a common shape.
+- RE_PROPERTIES and RE_INVESTOR_POSITIONS do NOT join directly.
+- Always use LEFT JOIN when the right side may not have matching rows.
+- Never use implicit joins or cartesian products.
+"""
+dashboard_heuristics = """
+- If the user asks about portfolio overview, include panels for: property count by type, gross asset value by property, occupancy rates, and debt positions summary.
+- If the user asks about risk or concentration, query RE_RISK_LIMITS and show limit vs current level, highlighting breaches (STATUS = 'Breach') in red.
+- If the user asks about investor positions or LP performance, query RE_INVESTOR_POSITIONS for the latest quarter. Show TVPI, DPI, RVPI, gross IRR per investor.
+- If the user asks about valuations, query RE_VALUATIONS for the latest quarter. Show gross asset value, debt outstanding, net equity value, cap rate.
+- If the user asks about debt positions, query RE_DEBT_POSITIONS. Show borrower, debt type, principal, LTV, DSCR, loan status.
+- For combined portfolio view, UNION ALL RE_PROPERTIES and RE_DEBT_POSITIONS with common column aliases.
+- For \"watch-list\" or \"problem assets\", filter RE_DEBT_POSITIONS where LOAN_STATUS = 'Watch-list'.
+- OCCUPANCY_PCT stores decimals (e.g. 0.93 = 93%). Multiply by 100 for display.
+- All numeric columns are actual NUMBER type — no text parsing needed.
+"""
+
+[tables."REALESTATEFUND.PUBLIC.RE_PROPERTIES"]
+description = "Property portfolio. Each row is one real estate asset (office, retail, industrial, multifamily)."
+notes = "PROPERTY_STATUS values: Active. OCCUPANCY_PCT stores decimals (0.93 = 93%) — multiply by 100 for display. PROPERTY_TYPE values: Industrial, Multifamily, Office, Retail."
+
+[tables."REALESTATEFUND.PUBLIC.RE_PROPERTIES".key_columns]
+PROPERTY_ID = "Unique property identifier (TEXT)"
+PROPERTY_NAME = "Property name (TEXT)"
+PROPERTY_TYPE = "Values: Industrial, Multifamily, Office, Retail"
+SECTOR = "Sector classification (TEXT)"
+CITY = "City (TEXT)"
+STATE_REGION = "State or region (TEXT)"
+COUNTRY = "Country (TEXT)"
+ACQUISITION_DATE = "Date acquired (DATE)"
+ACQUISITION_PRICE = "Purchase price (NUMBER)"
+ACQUISITION_CAP_RATE_PCT = "Cap rate at acquisition (NUMBER)"
+SQUARE_FEET = "Property size in sq ft (NUMBER)"
+UNITS_OR_KEYS = "Number of units or hotel keys (NUMBER)"
+OCCUPANCY_PCT = "Occupancy as decimal (NUMBER). 0.93 = 93%. Multiply by 100 for display."
+CURRENT_VALUE = "Current property value (NUMBER)"
+PROPERTY_STATUS = "Values: Active"
+HOLD_STRATEGY = "Investment strategy (TEXT)"
+DEBT_FINANCING = "Debt financing details (TEXT)"
+LOAN_TO_COST_PCT = "LTC ratio (NUMBER)"
+LENDER = "Lender name (TEXT)"
+LOAN_INTEREST_RATE_PCT = "Interest rate on property debt (NUMBER)"
+
+[tables."REALESTATEFUND.PUBLIC.RE_PROPERTIES".date_roles]
+ACQUISITION_DATE = "acquisition_date"
+LOAN_MATURITY_DATE = "loan_maturity_date"
+
+[tables."REALESTATEFUND.PUBLIC.RE_DEBT_POSITIONS"]
+description = "Debt/loan portfolio. Each row is one debt investment (mezzanine, bridge)."
+notes = "DEBT_TYPE values: Bridge, Mezzanine. LOAN_STATUS values: Active, Watch-list. COVENANT_STATUS tracks covenant compliance."
+
+[tables."REALESTATEFUND.PUBLIC.RE_DEBT_POSITIONS".key_columns]
+DEBT_ID = "Unique debt identifier (TEXT)"
+DEBT_NAME = "Debt position name (TEXT)"
+BORROWER_NAME = "Borrower (TEXT)"
+DEBT_TYPE = "Values: Bridge, Mezzanine"
+PROPERTY_TYPE = "Underlying property type (TEXT)"
+CITY = "City (TEXT)"
+STATE_REGION = "State/region (TEXT)"
+PRINCIPAL = "Principal amount (NUMBER)"
+CURRENT_VALUE = "Current value (NUMBER)"
+INTEREST_RATE_PCT = "Interest rate (NUMBER)"
+PIK_RATE_PCT = "PIK rate (NUMBER)"
+LTV_PCT = "Loan-to-value (NUMBER)"
+DSCR = "Debt service coverage ratio (NUMBER)"
+COVENANT_STATUS = "Covenant compliance (TEXT)"
+LOAN_STATUS = "Values: Active, Watch-list"
+MATURITY_DATE = "Loan maturity (DATE)"
+COLLATERAL_DESCRIPTION = "Collateral description (TEXT)"
+COLLATERAL_VALUE = "Collateral value (NUMBER)"
+
+[tables."REALESTATEFUND.PUBLIC.RE_DEBT_POSITIONS".date_roles]
+ORIGINATION_DATE = "origination_date"
+MATURITY_DATE = "maturity_date"
+LAST_PAYMENT_DATE = "last_payment_date"
+NEXT_PAYMENT_DATE = "next_payment_date"
+
+[tables."REALESTATEFUND.PUBLIC.RE_VALUATIONS"]
+description = "Quarterly asset valuations. Each row is one asset at one quarter."
+notes = "ASSET_CLASS distinguishes property vs debt. VALUATION_METHODOLOGY values vary. Use QUARTER_LABEL for display, VALUATION_DATE for sorting."
+
+[tables."REALESTATEFUND.PUBLIC.RE_VALUATIONS".key_columns]
+ASSET_ID = "Asset identifier (TEXT). Maps to PROPERTY_ID or DEBT_ID."
+ASSET_NAME = "Asset name (TEXT)"
+ASSET_CLASS = "Property or Debt (TEXT)"
+QUARTER_LABEL = "e.g. 'Q2 2026' (TEXT)"
+VALUATION_DATE = "Valuation date (DATE). Use for sorting."
+GROSS_ASSET_VALUE = "Gross asset value (NUMBER)"
+DEBT_OUTSTANDING = "Debt outstanding (NUMBER)"
+NET_EQUITY_VALUE = "Net equity = GAV - debt (NUMBER)"
+UNREALIZED_GAIN_LOSS = "Unrealized gain/loss (NUMBER)"
+CAP_RATE_PCT = "Capitalization rate (NUMBER)"
+VALUATION_METHODOLOGY = "Valuation method (TEXT)"
+
+[tables."REALESTATEFUND.PUBLIC.RE_VALUATIONS".date_roles]
+VALUATION_DATE = "valuation_date"
+
+[tables."REALESTATEFUND.PUBLIC.RE_INVESTOR_POSITIONS"]
+description = "Quarterly investor positions and performance."
+notes = "Investor details are inline (no separate investor master table). For latest quarter, filter by MAX(QUARTER_END_DATE)."
+
+[tables."REALESTATEFUND.PUBLIC.RE_INVESTOR_POSITIONS".key_columns]
+INVESTOR_ID = "Investor identifier (TEXT)"
+INVESTOR_NAME = "LP name (TEXT)"
+QUARTER_LABEL = "e.g. 'Q2 2026' (TEXT)"
+QUARTER_END_DATE = "Quarter end date (DATE). Use for sorting."
+CUMULATIVE_COMMITMENT = "Total commitment (NUMBER)"
+TOTAL_CAPITAL_CALLED = "Capital called to date (NUMBER)"
+UNCALLED_COMMITMENT = "Remaining uncalled (NUMBER)"
+NAV_THIS_QUARTER = "NAV this quarter (NUMBER)"
+TVPI = "Total Value to Paid-In (NUMBER)"
+DPI = "Distributions to Paid-In (NUMBER)"
+RVPI = "Residual Value to Paid-In (NUMBER)"
+GROSS_IRR_PCT = "Gross IRR (NUMBER)"
+
+[tables."REALESTATEFUND.PUBLIC.RE_INVESTOR_POSITIONS".date_roles]
+QUARTER_END_DATE = "snapshot_date"
+
+[tables."REALESTATEFUND.PUBLIC.RE_FUND_MASTER"]
+description = "Fund metadata. 1 row."
+notes = "FUND_ID joins to RE_RISK_LIMITS."
+
+[tables."REALESTATEFUND.PUBLIC.RE_FUND_MASTER".key_columns]
+FUND_ID = "Fund identifier (TEXT)"
+FUND_NAME = "Fund name (TEXT)"
+FUND_TYPE = "Fund type (TEXT)"
+VINTAGE_YEAR = "Vintage year (NUMBER)"
+FUND_SIZE_TARGET = "Target size (NUMBER)"
+FUND_SIZE_HARD_CAP = "Hard cap (NUMBER)"
+TOTAL_COMMITMENTS = "Total commitments (NUMBER)"
+GP_COMMITMENT = "GP commitment (NUMBER)"
+TARGET_GROSS_IRR_PCT = "Target gross IRR (NUMBER)"
+TARGET_NET_IRR_PCT = "Target net IRR (NUMBER)"
+FUND_DOMICILE = "Fund domicile (TEXT)"
+FUND_TERM_YEARS = "Fund term in years (NUMBER)"
+GENERAL_PARTNER_ENTITY = "GP entity (TEXT)"
+FUND_ADMINISTRATOR = "Fund admin (TEXT)"
+AUDITOR = "Auditor (TEXT)"
+
+[tables."REALESTATEFUND.PUBLIC.RE_FUND_MASTER".date_roles]
+FUND_INCEPTION_DATE = "inception_date"
+FIRST_CLOSE_DATE = "first_close_date"
+FINAL_CLOSE_DATE = "final_close_date"
+
+[tables."REALESTATEFUND.PUBLIC.RE_RISK_LIMITS"]
+description = "Fund risk and concentration limits."
+notes = "STATUS values: Compliant (currently all compliant). Current level column is CURRENT_LEVEL_PCT_Q2_2026."
+
+[tables."REALESTATEFUND.PUBLIC.RE_RISK_LIMITS".key_columns]
+LIMIT_TYPE = "Limit description (TEXT)"
+LIMIT_THRESHOLD_PCT = "Threshold percentage (NUMBER)"
+CURRENT_LEVEL_PCT_Q2_2026 = "Current level as of Q2 2026 (NUMBER)"
+STATUS = "Values: Compliant"

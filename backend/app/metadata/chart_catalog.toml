@@ -1,0 +1,308 @@
+version = 1
+catalog = "chart_types"
+
+[meta]
+description = "Authoritative chart catalog for AI chart selection and dashboard widgets."
+
+[selection_rules]
+priority = """
+1. stat: exactly 1 row and 1 numeric value — single KPI (dashboard widgets only, not Q&A chart picker).
+2. table (type "none"): many rows, many columns, detail listing, or chart would mislead.
+3. pie: 1 category column + 1 numeric, 3–8 rows, parts-of-a-whole.
+4. line or area: ordered x-axis (date, month, quarter) + 1+ numeric — trends over time.
+5. bar: categorical x + 1+ numeric — compare or rank categories.
+6. radar: 3–8 dimension names + 1–2 numeric series — profile comparison (dashboard v2).
+When unsure between chart and table, prefer "none".
+"""
+
+json_output_hint = """
+Reply with ONLY a JSON object (no markdown, no prose):
+{
+  "type": "bar|line|area|pie|none",
+  "x": "<column name>",
+  "y": ["<numeric column>", ...],
+  "title": "<short title or null>",
+  "modifiers": { }
+}
+- Use ONLY column names exactly as given in the query result.
+- x is the category or time axis; y are numeric value columns (exclude x from y).
+- type "none" means show a plain table (omit x, y, and modifiers).
+- Include only modifier keys that apply to the chosen type (see catalog below).
+"""
+
+[types.stat]
+summary = "Single KPI scalar value displayed as a metric card."
+v1_enabled = true
+qa_picker = false
+use_when = """
+- User needs one headline number: total, count, average, rate.
+- SQL returns exactly 1 row with 1 primary numeric column.
+- Dashboard top-row KPI tiles.
+"""
+avoid_when = """
+- Breakdown by category or time — use bar, line, or pie.
+- Multiple unrelated metrics in one widget — use separate stat cards.
+- More than 1 data row — use table or chart.
+"""
+data_shape = "1 row; 1 numeric value column (optional second column or query for trend %)."
+encoding = "valueColumn = the numeric column; title = card label."
+example_questions = [
+    "What is total outstanding principal?",
+    "How many delinquent loans are there?",
+    "What is the average interest rate?",
+]
+
+[types.stat.modifiers.format]
+allowed = ["currency", "number", "percent", "plain"]
+default = "number"
+guidance = """
+currency: dollar amounts and balances.
+number: counts and general numerics.
+percent: rates and ratios (value is e.g. 12.5 for 12.5%).
+plain: pre-formatted or non-numeric display strings.
+"""
+
+[types.stat.modifiers.trend]
+optional = true
+guidance = """
+Optional period-over-period change shown as a badge.
+Requires a second value or comparison query: direction up|down|neutral and a % string.
+Omit when no prior-period comparison exists.
+"""
+
+[types.table]
+summary = "Raw tabular data with no chart geometry."
+v1_enabled = true
+qa_picker = true
+qa_type_alias = "none"
+use_when = """
+- Detail rows matter more than visual pattern.
+- Too many categories for pie (>8) or crowded bar chart.
+- Many columns where no clear x/y encoding exists.
+- User asked to list, show, or export records.
+"""
+avoid_when = """
+- A clear aggregate pattern exists — prefer bar, line, area, or pie.
+- Single scalar KPI — use stat.
+"""
+data_shape = "Any number of rows and columns."
+encoding = "Render all columns as table cells; no x/y mapping."
+example_questions = [
+    "List the top 50 loans by balance.",
+    "Show all reconciliation breaks this month.",
+]
+
+[types.bar]
+summary = "Cartesian bar chart for comparing values across categories."
+v1_enabled = true
+qa_picker = true
+use_when = """
+- Compare or rank discrete categories (state, product, status, servicer).
+- 2–30 rows with one category column and one or more metrics.
+- Magnitude comparison where bars are easier than a table scan.
+"""
+avoid_when = """
+- Ordered time series — prefer line or area.
+- Parts-of-a-whole with few slices — pie may be clearer.
+- Single KPI — use stat.
+"""
+data_shape = "2+ rows; 1 categorical column (x) + 1+ numeric columns (y)."
+encoding = "x = category column; y = array of numeric measure columns."
+example_questions = [
+    "Principal balance by state.",
+    "Loan count by property type.",
+    "Top 10 borrowers by exposure.",
+]
+
+[types.bar.modifiers.orientation]
+allowed = ["vertical", "horizontal"]
+default = "vertical"
+guidance = """
+vertical: default; short category labels on x-axis.
+horizontal: long category names (loan program, entity name) — categories on y-axis.
+"""
+
+[types.bar.modifiers.series]
+allowed = ["single", "grouped", "stacked"]
+default = "single"
+guidance = """
+single: one numeric column in y.
+grouped: 2+ numeric columns compared side-by-side per category (y has 2+ entries).
+stacked: 2+ numeric columns that sum to a meaningful total per category.
+"""
+
+[types.bar.modifiers.negative]
+allowed = ["true", "false"]
+default = "false"
+guidance = """
+true: numeric values include negatives (P&L, variance vs target).
+false: all values are zero or positive.
+"""
+
+[types.bar.modifiers.colorScale]
+allowed = ["sequential"]
+guidance = """
+sequential: color each bar by magnitude — smallest value lightest, largest darkest.
+Use with a single numeric column in y (ranking / comparison charts).
+Do not combine with negative modifier.
+"""
+
+[types.line]
+summary = "Line chart for trends and changes over an ordered x-axis."
+v1_enabled = true
+qa_picker = true
+use_when = """
+- Values change over ordered time (date, month, quarter, year).
+- Emphasize trend direction and rate of change.
+- 3+ time points with 1+ numeric metrics.
+"""
+avoid_when = """
+- Unordered categories — use bar.
+- Single scalar — use stat.
+- Composition share over time where filled areas help — consider area stacked.
+"""
+data_shape = "3+ rows; ordered x (time or sequence) + 1+ numeric columns."
+encoding = "x = ordered dimension; y = numeric series (one or more)."
+example_questions = [
+    "Monthly origination volume over the last 12 months.",
+    "Delinquency rate trend by quarter.",
+]
+
+[types.line.modifiers.series]
+allowed = ["single", "multiple"]
+default = "single"
+guidance = """
+single: one line (y has one column).
+multiple: 2+ lines for comparing metrics or segments over the same x-axis.
+"""
+
+[types.line.modifiers.curve]
+allowed = ["linear", "natural", "step"]
+default = "natural"
+guidance = """
+linear: straight segments between points.
+natural: smooth curve (default for continuous trends).
+step: values hold constant then jump — status changes, discrete reporting periods.
+"""
+
+[types.area]
+summary = "Filled area chart emphasizing volume or magnitude under a trend."
+v1_enabled = true
+qa_picker = true
+use_when = """
+- Time series where filled area communicates volume or cumulative feel.
+- Same ordered-x use cases as line, with stronger magnitude emphasis.
+- Stacked areas when components sum over time.
+"""
+avoid_when = """
+- Unordered categories — use bar.
+- Only one or two points — table or stat may suffice.
+- Multiple unrelated metrics without compositional meaning — use line multiple.
+"""
+data_shape = "3+ rows; ordered x + 1+ numeric columns."
+encoding = "x = ordered dimension; y = numeric series."
+example_questions = [
+    "Daily payment volume over the past 90 days.",
+    "Stacked principal by product line over quarters.",
+]
+
+[types.area.modifiers.series]
+allowed = ["single", "stacked"]
+default = "single"
+guidance = """
+single: one filled series.
+stacked: 2+ series that represent parts of a total over time (same stackId).
+"""
+
+[types.area.modifiers.curve]
+allowed = ["linear", "natural", "step"]
+default = "natural"
+guidance = "Same rules as line curve."
+
+[types.area.modifiers.stackOffset]
+allowed = ["default", "expand"]
+default = "default"
+guidance = """
+default: absolute stacked totals over time.
+expand: normalize to 100% — use when share over time matters, not absolute levels.
+Only applies when series = stacked.
+"""
+
+[types.pie]
+summary = "Pie or donut chart for parts-of-a-whole with few categories."
+v1_enabled = true
+qa_picker = true
+use_when = """
+- Composition or market-share style question.
+- 1 category column + 1 numeric; typically 3–8 slices.
+- User asks for breakdown, mix, or distribution as shares.
+"""
+avoid_when = """
+- More than 8 categories — use bar.
+- Time series — use line or area.
+- Precise comparison of similar-sized slices — bar is clearer.
+"""
+data_shape = "3–8 rows; 1 category (slice label) + 1 numeric (slice value)."
+encoding = "x = category/name column; y = [single numeric column only]."
+example_questions = [
+    "Loan mix by property type.",
+    "Share of portfolio by state.",
+]
+
+[types.pie.modifiers.variant]
+allowed = ["pie", "donut", "nested"]
+default = "pie"
+guidance = """
+pie: standard filled disc.
+donut: pie with inner hole — room for center KPI label.
+nested: dual ring inner+outer (rare; v2 only — do not use in Q&A picker).
+"""
+
+[types.pie.modifiers.centerLabel]
+optional = true
+guidance = "Optional text or KPI in donut center. Only when variant = donut."
+
+[types.pie.modifiers.colorScale]
+allowed = ["sequential"]
+guidance = """
+sequential: color each slice by its value — smallest slice lightest, largest darkest.
+Use when slice size should reinforce magnitude visually.
+"""
+
+[types.radar]
+summary = "Radar chart comparing metric profiles across several dimensions."
+v1_enabled = false
+qa_picker = false
+use_when = """
+- Compare 3–8 metrics on a common scale (risk score basket, KPI profile).
+- Overlay two entities (e.g. servicer A vs B) on the same spokes.
+"""
+avoid_when = """
+- Time series — use line or area.
+- Many dimensions or precise value reading — use bar.
+- Standard dashboard breakdown questions — prefer bar or pie.
+"""
+data_shape = "3–8 rows; 1 dimension name column (spoke) + 1–2 numeric series."
+encoding = "x = dimension labels (spokes); y = one or two numeric series."
+example_questions = [
+    "Compare delinquency metrics across risk dimensions.",
+    "Servicer performance profile across KPIs.",
+]
+
+[types.radar.modifiers.series]
+allowed = ["single", "multiple"]
+default = "single"
+guidance = """
+single: one polygon (one profile).
+multiple: two series for side-by-side entity comparison.
+"""
+
+[cross_modifiers.interactive]
+applies_to = ["bar", "line", "area"]
+description = """
+UI-only: date-range filter or series toggle on dense time series.
+Does not change SQL shape — same underlying chart type with interactive = true in dashboard config.
+"""
+
+[cross_modifiers.presentation]
+note = "title, legend, and labels are presentation-only. Do not affect SQL or encoding x/y."

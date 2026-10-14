@@ -1,0 +1,90 @@
+# Portainer / server: pull-only (no build).
+# Requires stack env: DOMAIN=dataalpha.in
+# Requires external Docker network: web (same network Traefik is on)
+#
+# Build & tag locally, then push:
+#   docker compose -f docker-compose.yml build backend frontend
+#   docker compose -f docker-compose.prod.yml push
+#
+# Public URL: https://one.${DOMAIN}
+#   /       → frontend (nginx :80)
+#   /api/*  → backend (:8000)
+
+networks:
+  web:
+    external: true
+
+volumes:
+  backend_config:
+  backend_excel_storage:
+
+services:
+  backend:
+    image: 629143592903.dkr.ecr.us-east-1.amazonaws.com/ai-reporting-be:latest
+    pull_policy: always
+    restart: unless-stopped
+    # Values come from Portainer stack Environment (no .env file in the repo).
+    environment:
+      DEBUG: ${DEBUG:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      FRONTEND_URL: ${FRONTEND_URL}
+      WEBAPP_BASE_URL: ${WEBAPP_BASE_URL}
+      SESSION_BACKEND: ${SESSION_BACKEND:-redis}
+      REDIS_URL: ${REDIS_URL}
+      SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT}
+      SNOWFLAKE_WAREHOUSE: ${SNOWFLAKE_WAREHOUSE}
+      SNOWFLAKE_DATABASE: ${SNOWFLAKE_DATABASE}
+      SNOWFLAKE_DEFAULT_ROLE: ${SNOWFLAKE_DEFAULT_ROLE}
+      SNOWFLAKE_AVAILABLE_ROLES: ${SNOWFLAKE_AVAILABLE_ROLES}
+      # Snowflake roles allowed into the semantic-layer admin portal.
+      # MUST be declared here, not only in the Portainer stack environment:
+      # stack variables fill in ${...} when the compose file is rendered, but a
+      # container only receives what this block names. Unset means NOBODY is an
+      # admin (a deliberate default), which presents as the Configuration
+      # section vanishing and /admin/semantic returning 403 for every user.
+      ADMIN_ROLES: ${ADMIN_ROLES}
+      OAUTH_CLIENT_ID: ${OAUTH_CLIENT_ID}
+      OAUTH_CLIENT_SECRET: ${OAUTH_CLIENT_SECRET}
+      OAUTH_REDIRECT_URI: ${OAUTH_REDIRECT_URI}
+      JWT_SECRET: ${JWT_SECRET}
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      DEV_LOGIN_ENABLED: ${DEV_LOGIN_ENABLED:-false}
+      MCP_EXCEL_MAX_ROWS: ${MCP_EXCEL_MAX_ROWS:-25000}
+      DASHBOARD_QUERY_CONCURRENCY: ${DASHBOARD_QUERY_CONCURRENCY:-1}
+    volumes:
+      - backend_config:/app/config
+      - backend_excel_storage:/app/excel_storage
+    networks:
+      - web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=web"
+      - "traefik.http.routers.one-api.rule=Host(`one.${DOMAIN}`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.one-api.entrypoints=websecure"
+      - "traefik.http.routers.one-api.tls.certresolver=le"
+      - "traefik.http.routers.one-api.middlewares=secure-headers@docker,ratelimit@docker"
+      - "traefik.http.routers.one-api.service=one-api"
+      - "traefik.http.services.one-api.loadbalancer.server.port=8000"
+
+  frontend:
+    image: 629143592903.dkr.ecr.us-east-1.amazonaws.com/ai-reporting-fe:latest
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=web"
+      - "traefik.http.routers.one.rule=Host(`one.${DOMAIN}`) && !PathPrefix(`/api`)"
+      - "traefik.http.routers.one.entrypoints=websecure"
+      - "traefik.http.routers.one.tls.certresolver=le"
+      - "traefik.http.routers.one.middlewares=secure-headers@docker,ratelimit@docker"
+      - "traefik.http.routers.one.service=one"
+      - "traefik.http.services.one.loadbalancer.server.port=80"
+
+

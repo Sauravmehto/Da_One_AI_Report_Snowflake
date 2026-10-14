@@ -1,0 +1,54 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    # Persist to disk so chat history survives a container restart.
+    command: ["redis-server", "--appendonly", "yes"]
+
+  backend:
+    # Same tag as docker-compose.prod.yml so `docker compose build` then
+    # `docker compose -f docker-compose.prod.yml push` works.
+    image: 629143592903.dkr.ecr.us-east-1.amazonaws.com/ai-reporting-be:latest
+    build:
+      context: ./backend
+      dockerfile: ../docker/backend.Dockerfile
+      # Use prod for ECR/Portainer (nginx UI + uvicorn workers).
+      # For local hot-reload: BUILD_TARGET=dev docker compose up --build
+      target: ${BUILD_TARGET:-prod}
+    restart: unless-stopped
+    env_file: ./backend/.env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - redis
+
+  frontend:
+    image: 629143592903.dkr.ecr.us-east-1.amazonaws.com/ai-reporting-fe:latest
+    build:
+      context: ./frontend
+      dockerfile: ../docker/frontend.Dockerfile
+      target: ${BUILD_TARGET:-prod}
+      args:
+        # Baked into the bundle at build time — see the Dockerfile. Flip to
+        # true and REBUILD to put Report Builder in the sidebar; there is no
+        # runtime switch for it.
+        VITE_SHOW_REPORT_BUILDER: ${VITE_SHOW_REPORT_BUILDER:-false}
+    restart: unless-stopped
+    environment:
+      VITE_API_PROXY_TARGET: http://backend:8000
+    ports:
+      - "5173:5173"
+      - "80:80"
+    volumes:
+      - ./frontend:/app
+    depends_on:
+      - backend
+
+volumes:
+  redis-data:

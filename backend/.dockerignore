@@ -1,0 +1,47 @@
+# Keep the build context to the application itself.
+#
+# Without this file `COPY . .` swept the whole backend directory into the
+# image: a 180MB Windows virtualenv that a Linux container can never use, the
+# runtime state directories, and — the reason this file is not merely an
+# optimisation — `.env`, which put every secret into an image pushed to a
+# registry.
+#
+# NOT excluded, deliberately: config/metadata (the published semantic layers
+# must ship in the image), sql/, and Pipfile/Pipfile.lock.
+
+# Secrets. Local runs read .env from the HOST via docker-compose's `env_file`,
+# and deployments inject the environment through Portainer, so nothing needs
+# it inside the image.
+.env
+.env.*
+!.env.example
+*.pem
+*.p8
+
+# Virtualenvs — built for the host OS, wrong architecture, and reinstalled by
+# `pipenv install --system` during the build anyway.
+.venv
+venv
+ENV
+
+# Runtime state, written by the running app. Shipping it means one user's
+# sessions and another's chat history travel inside the image.
+.conversations
+.sessions
+excel_storage
+excel_inbox
+
+# Python build artefacts
+__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Local noise
+.git
+.gitignore
+.dockerignore
+*.log
+.DS_Store
